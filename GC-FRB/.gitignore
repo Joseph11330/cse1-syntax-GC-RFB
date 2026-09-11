@@ -27,3 +27,8 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Backend specific ignores (just to be extra safe)
+Gcfrb_backend/node_modules
+Gcfrb_backend/dist
+Gcfrb_backend/.env
