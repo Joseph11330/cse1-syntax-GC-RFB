@@ -104,9 +104,7 @@ const signup = async () => {
     await pause();
 };
 
-// ============================================================
 // LOG IN
-// ============================================================
 const login = async () => {
     header("Log In");
 
@@ -196,9 +194,7 @@ const login = async () => {
     await pause();
 };
 
-// ============================================================
 // BROWSE ROOMS (reads from DB)
-// ============================================================
 const browseRooms = async () => {
     header("Available Rooms");
 
@@ -228,9 +224,7 @@ const browseRooms = async () => {
     await pause();
 };
 
-// ============================================================
 // MAKE RESERVATION (writes to DB)
-// ============================================================
 const makeReservation = async () => {
     header("New Reservation");
 
@@ -333,9 +327,7 @@ const makeReservation = async () => {
     await pause();
 };
 
-// ============================================================
-// VIEW MY RESERVATIONS (joins with rooms for readable names)
-// ============================================================
+// VIEW MY RESERVATIONS 
 const viewMyReservations = async () => {
     header("My Reservations");
 
@@ -382,9 +374,7 @@ const viewMyReservations = async () => {
     await pause();
 };
 
-// ============================================================
 // STUDENT DASHBOARD
-// ============================================================
 const studentDashboard = async () => {
     header("Student Dashboard");
     console.log(`Name:  ${currentUser?.fullName}`);
@@ -416,9 +406,7 @@ const studentDashboard = async () => {
     }
 };
 
-// ============================================================
-// VIEW ALL BOOKINGS (admin, joins profiles + rooms)
-// ============================================================
+// VIEW ALL BOOKINGS
 const viewAllBookings = async () => {
     header("All Bookings");
 
@@ -470,9 +458,7 @@ const viewAllBookings = async () => {
     await pause();
 };
 
-// ============================================================
 // UPDATE BOOKING STATUS (admin)
-// ============================================================
 const updateBookingStatus = async () => {
     header("Update Booking Status");
 
@@ -512,9 +498,7 @@ const updateBookingStatus = async () => {
     await pause();
 };
 
-// ============================================================
 // MANAGE ROOMS (admin) - add / toggle availability
-// ============================================================
 const addRoom = async () => {
     header("Add Room");
 
@@ -606,9 +590,7 @@ const toggleRoomAvailability = async () => {
     await pause();
 };
 
-// ============================================================
 // ADMIN DASHBOARD
-// ============================================================
 const adminDashboard = async () => {
     header("Admin Dashboard");
     console.log(`Name:  ${currentUser?.fullName}`);
@@ -646,9 +628,7 @@ const adminDashboard = async () => {
     }
 };
 
-// ============================================================
 // MAIN LOOP
-// ============================================================
 const main = async () => {
     while (true) {
         if (currentUser) {

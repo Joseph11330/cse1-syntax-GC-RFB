@@ -1,6 +1,6 @@
-import { Request } from "express";
+import { Request } from 'express';
 
-export type UserRole = "student" | "admin";
+export type UserRole = 'student' | 'admin';
 
 export interface Profile {
   id: string;
@@ -10,9 +10,15 @@ export interface Profile {
 }
 
 export interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    role: UserRole;
-  };
+  user?: { id: string; email: string; role: UserRole };
 }
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { id: string; email: string; role: UserRole };
+    }
+  }
+}
+
+export { };

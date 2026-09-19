@@ -1,25 +1,22 @@
+import './types';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import authRoutes from './routes/authRoutes';
+import studentRoutes from './routes/studentRoutes';
+import adminRoutes from './routes/adminRoutes';
+import roomRoutes from './routes/roomRoutes';
 
 dotenv.config();
 
 const app = express();
-
-// Middleware
-app.use(cors({ origin: 'http://localhost:5173' }));
+app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 
-// Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/student', studentRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api', roomRoutes);
 
-// Health check
-app.get('/', (_req, res) => {
-  res.json({ status: 'Backend running' });
-});
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+const PORT = Number(process.env.PORT) || 4000;
+app.listen(PORT, () => console.log(`Server on http://localhost:${PORT}`));
