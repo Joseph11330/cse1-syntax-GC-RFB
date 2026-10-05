@@ -1,4 +1,4 @@
-import { useAuth } from '../context/AuthProvider';
+import { useAuth } from '../context/AuthContext';
 import { useAsync } from '../hooks/useAsync';
 import { dashboardApi } from '../services/api';
 import Card from '../components/ui/Card';

@@ -1,4 +1,4 @@
-import { useAuth } from '../../context/AuthProvider';
+import { useAuth } from '../../context/AuthContext';
 import Button from '../ui/Button';
 
 export default function Topbar({ title }: { title: string }) {

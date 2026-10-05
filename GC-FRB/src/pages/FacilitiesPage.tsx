@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthProvider';
+import { useAuth } from '../context/AuthContext';
 import { useAsync } from '../hooks/useAsync';
 import { facilitiesApi } from '../services/facilityApi';
 import Card from '../components/ui/Card';

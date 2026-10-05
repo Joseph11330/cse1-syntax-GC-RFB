@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useAuth } from '../context/AuthProvider';
+import { useAuth } from '../context/AuthContext';
 import { useAsync } from '../hooks/useAsync';
 import { bookingsApi, facilitiesApi } from '../services/facilityApi';
 import { fmtDate, fmtTime } from '../utils/format';
