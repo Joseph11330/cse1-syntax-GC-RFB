@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables (Keep these secret!)
+.env
+.env.local
+.env.*.local
+
+# Backend specific ignores (just to be extra safe)
+Gcfrb_backend/node_modules
+Gcfrb_backend/dist
+Gcfrb_backend/.env
