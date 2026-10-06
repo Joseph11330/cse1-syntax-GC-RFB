@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { Card, Badge, Select } from '../components/ui'
-import DateRange from '../components/DateRange'
-import { BookingMenu } from '../components/BookingActions'
-import { STATUSES, STATUS_TONE, getBookings, inRange, initials, whenLabel } from '../data/bookings'
-import { getFacilities } from '../data/facilities'
+import { Card, Badge, Select } from '../../components/ui/index'
+import DateRange from '../../components/admin/DateRange'
+import { BookingMenu } from '../../components/admin/BookingActions'
+import { STATUSES, STATUS_TONE, getBookings, inRange, initials, whenLabel } from '../../data/admin/bookings'
+import { getFacilities } from '../../data/admin/facilities'
 function Bookings() {
   const [, force] = useState(0)
   const [q, setQ] = useState('')
@@ -55,7 +55,7 @@ function Bookings() {
               {rows.map((b) => (
                 <tr key={b.id} className="transition hover:bg-slate-50">
                   <td className="px-6 py-3">
-                    <Link to={`/bookings/${b.id}`} className="flex items-center gap-3">
+                    <Link to={`/admin/bookings/${b.id}`} className="flex items-center gap-3">
                       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gc-900 text-[10px] font-bold text-white">
                         {initials(b.who)}
                       </span>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
-import logo from '../../assets/logo-login.png'
-import { NAV } from '../../data/landing'
+import logo from '../../../assets/logo-login.png'
+import { NAV } from '../../../data/booker/landing'
 import LinkButton from '../ui/LinkButton'
 function Navbar() {
   const [scrolled, setScrolled] = useState(false)
@@ -36,7 +36,7 @@ function Navbar() {
           ))}
         </ul>
         <div className="hidden items-center gap-3 md:flex">
-          <LinkButton to="/bookings/new" className="!py-2">
+          <LinkButton to="/book" className="!py-2">
             Book now
           </LinkButton>
         </div>
@@ -51,7 +51,7 @@ function Navbar() {
               {n.label}
             </a>
           ))}
-          <LinkButton to="/bookings/new" className="mt-2 w-full">
+          <LinkButton to="/book" className="mt-2 w-full">
             Book now
           </LinkButton>
         </div>

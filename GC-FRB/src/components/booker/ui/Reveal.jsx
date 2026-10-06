@@ -1,4 +1,4 @@
-import { useInView } from '../../hooks/useInView'
+import { useInView } from '../../../hooks/booker/useInView'
 function Reveal({ children, delay = 0, className = '' }) {
   const [ref, seen] = useInView(0.15)
   return (

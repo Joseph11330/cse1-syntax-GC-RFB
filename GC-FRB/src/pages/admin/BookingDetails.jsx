@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { Badge, Card, Field, inputCls } from '../components/ui'
-import { useBookingActions } from '../hooks/useBookingActions'
-import { STATUS_TONE, detailWhen, getBooking } from '../data/bookings'
+import { Badge, Card, Field, inputCls } from '../../components/ui/index'
+import { useBookingActions } from '../../hooks/admin/useBookingActions'
+import { STATUS_TONE, detailWhen, getBooking } from '../../data/admin/bookings'
 function BookingDetails() {
   const { id } = useParams()
   const nav = useNavigate()
   const [, force] = useState(0)
   const { accept, reject, modals } = useBookingActions(() => force((n) => n + 1))
   const b = getBooking(id)
-  if (!b) return <Navigate to="/bookings" replace />
+  if (!b) return <Navigate to="/admin/bookings" replace />
   const ro = `${inputCls} cursor-default bg-white shadow-sm`
   const v = (d) => <input readOnly value={d} className={ro} />
   const area = (d, rows) => <textarea readOnly rows={rows} value={d} className={ro} />

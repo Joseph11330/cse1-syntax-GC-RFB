@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { Card, Field, inputCls } from '../components/ui'
-import AmenitiesEditor from '../components/AmenitiesEditor'
-import { FACILITY_TYPES, getFacility, removeFacility, updateFacility } from '../data/facilities'
+import { Card, Field, inputCls } from '../../components/ui/index'
+import AmenitiesEditor from '../../components/admin/AmenitiesEditor'
+import { FACILITY_TYPES, getFacility, removeFacility, updateFacility } from '../../data/admin/facilities'
 const STATUSES = ['Available', 'Under Maintenance', 'Occupied']
 function FacilityDetails() {
   const { id } = useParams()
   const nav = useNavigate()
   const original = getFacility(id)
   const [f, setF] = useState(() => (original ? { ...original, location: `${original.floor} - ${original.building}` } : null))
-  if (!f) return <Navigate to="/facilities" replace />
+  if (!f) return <Navigate to="/admin/facilities" replace />
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const save = () => {
     const [floor, ...rest] = f.location.split(' - ')
@@ -25,12 +25,12 @@ function FacilityDetails() {
       floor: floor.trim(),
       building: rest.join(' - ').trim(),
     })
-    nav('/facilities')
+    nav('/admin/facilities')
   }
   const remove = () => {
     if (!window.confirm(`Remove ${f.name}?`)) return
     removeFacility(id)
-    nav('/facilities')
+    nav('/admin/facilities')
   }
   return (
     <Card className="mx-auto max-w-3xl p-7">
@@ -95,7 +95,7 @@ function FacilityDetails() {
         </button>
         <div className="flex gap-3">
           <button
-            onClick={() => nav('/facilities')}
+            onClick={() => nav('/admin/facilities')}
             className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             Back

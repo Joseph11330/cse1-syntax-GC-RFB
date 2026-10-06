@@ -1,6 +1,6 @@
 import LinkButton from '../ui/LinkButton'
 import StatCounter from '../ui/StatCounter'
-import { STATS } from '../../data/landing'
+import { STATS } from '../../../data/booker/landing'
 function Hero() {
   return (
     <section className="relative overflow-hidden bg-gradient-to-b from-gc-50 via-white to-white pt-32 pb-16 sm:pt-40">

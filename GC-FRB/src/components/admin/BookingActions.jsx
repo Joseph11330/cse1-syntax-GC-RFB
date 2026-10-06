@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MoreVertical } from 'lucide-react'
-import { useBookingActions } from '../hooks/useBookingActions'
+import { useBookingActions } from '../../hooks/admin/useBookingActions'
 function BookingMenu({ b, onChange }) {
   const nav = useNavigate()
   const { accept, reject, modals } = useBookingActions(onChange)
@@ -49,7 +49,7 @@ function BookingMenu({ b, onChange }) {
           style={{ top: pos.top, right: pos.right }}
           className="fixed z-40 w-36 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-lg"
         >
-          <button className={`${item} text-gc-900`} onClick={() => nav(`/bookings/${b.id}`)}>
+          <button className={`${item} text-gc-900`} onClick={() => nav(`/admin/bookings/${b.id}`)}>
             View Details
           </button>
           {pending && (

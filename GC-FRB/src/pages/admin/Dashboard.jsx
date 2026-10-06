@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Building2, Clock, CalendarDays, TrendingUp, Plus, Bell, ChevronRight } from 'lucide-react'
-import api from '../api'
-import { Card, Badge, Select } from '../components/ui'
-import DateRange from '../components/DateRange'
-import { BookingMenu } from '../components/BookingActions'
-import { STATUSES, STATUS_TONE, getBookings, inRange, initials, whenLabel } from '../data/bookings'
+import api from '../../api'
+import { Card, Badge, Select } from '../../components/ui/index'
+import DateRange from '../../components/admin/DateRange'
+import { BookingMenu } from '../../components/admin/BookingActions'
+import { STATUSES, STATUS_TONE, getBookings, inRange, initials, whenLabel } from '../../data/admin/bookings'
 const mock = {
   stats: [34, 24, 8, 68],
   rooms: [
@@ -58,7 +58,7 @@ function Dashboard() {
             <span className="absolute right-2 top-2 size-2 rounded-full bg-red-500" />
           </button>
           <Link
-            to="/bookings/new"
+            to="/admin/bookings/new"
             className="flex items-center gap-1.5 rounded-full bg-gc-500 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-gc-500/30 hover:bg-gc-600"
           >
             <Plus size={14} /> New Booking
@@ -90,7 +90,7 @@ function Dashboard() {
             <Select value={status} onChange={setStatus} options={['All Status', ...STATUSES]} />
             <Select value={facility} onChange={setFacility} options={facilities} />
             <Link
-              to="/bookings"
+              to="/admin/bookings"
               className="flex items-center gap-1 rounded-md border border-gc-600/40 px-3 py-1.5 text-[11px] font-medium text-gc-700 hover:bg-gc-50"
             >
               View Full Booking <ChevronRight size={13} />
@@ -113,7 +113,7 @@ function Dashboard() {
             {rows.map((r) => (
               <tr key={r.id} className="transition hover:bg-slate-50">
                 <td className="px-6 py-4">
-                  <Link to={`/bookings/${r.id}`} className="flex items-center gap-3">
+                  <Link to={`/admin/bookings/${r.id}`} className="flex items-center gap-3">
                     <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gc-900 text-[10px] font-bold text-white">
                       {initials(r.who)}
                     </span>

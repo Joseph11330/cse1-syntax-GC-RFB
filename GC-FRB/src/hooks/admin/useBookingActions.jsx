@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, XCircle } from 'lucide-react'
-import { ConfirmModal } from '../components/ui'
-import { acceptBooking, rejectBooking, whenLabel } from '../data/bookings'
+import { ConfirmModal } from '../../components/ui/index'
+import { acceptBooking, rejectBooking, whenLabel } from '../../data/admin/bookings'
 function useBookingActions(onChange) {
   const [dialog, setDialog] = useState(null)
   const accept = (b) => {

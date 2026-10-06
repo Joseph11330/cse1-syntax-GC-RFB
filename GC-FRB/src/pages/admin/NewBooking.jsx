@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, Field, inputCls } from '../components/ui'
-import { addBooking, findConflict, whenLabel } from '../data/bookings'
-import { getFacilities } from '../data/facilities'
+import { Card, Field, inputCls } from '../../components/ui/index'
+import { addBooking, findConflict, whenLabel } from '../../data/admin/bookings'
+import { getFacilities } from '../../data/admin/facilities'
 const blank = {
   room: '',
   date: '',
@@ -41,7 +41,7 @@ function NewBooking() {
       equipment: f.equipment.trim() || 'None',
       remarks: f.remarks.trim() || 'None',
     })
-    nav('/bookings')
+    nav('/admin/bookings')
   }
   return (
     <Card className="mx-auto max-w-3xl p-7">

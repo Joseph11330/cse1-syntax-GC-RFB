@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, MoreVertical, Plus, X } from 'lucide-react'
-import { Card, Badge, Field, inputCls } from '../components/ui'
-import AmenitiesEditor from '../components/AmenitiesEditor'
-import { FACILITY_TYPES, addFacility, getFacilities, removeFacility } from '../data/facilities'
+import { Card, Badge, Field, inputCls } from '../../components/ui/index'
+import AmenitiesEditor from '../../components/admin/AmenitiesEditor'
+import { FACILITY_TYPES, addFacility, getFacilities, removeFacility } from '../../data/admin/facilities'
 const tone = { Available: 'green', 'Under Maintenance': 'amber', Occupied: 'red' }
 function RowMenu({ f, onChange }) {
   const nav = useNavigate()
@@ -25,7 +25,7 @@ function RowMenu({ f, onChange }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-          <button className={`${item} text-slate-700`} onClick={() => nav(`/facilities/${f.id}`)}>
+          <button className={`${item} text-slate-700`} onClick={() => nav(`/admin/facilities/${f.id}`)}>
             View Details
           </button>
           <button

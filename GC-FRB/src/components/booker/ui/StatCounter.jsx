@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useInView } from '../../hooks/useInView'
+import { useInView } from '../../../hooks/booker/useInView'
 function StatCounter({ value, suffix = '', label }) {
   const [ref, seen] = useInView(0.6)
   const [n, setN] = useState(0)

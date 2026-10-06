@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Calendar } from 'lucide-react'
-import { fmtDate } from '../data/bookings'
+import { fmtDate } from '../../data/admin/bookings'
 function DateRange({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)

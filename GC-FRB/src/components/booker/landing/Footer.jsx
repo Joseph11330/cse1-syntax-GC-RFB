@@ -1,4 +1,4 @@
-import { FOOTER } from '../../data/landing'
+import { FOOTER } from '../../../data/booker/landing'
 function Footer() {
   return (
     <footer className="bg-gc-950 text-gc-100">

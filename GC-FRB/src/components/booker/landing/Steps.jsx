@@ -1,6 +1,6 @@
 import Reveal from '../ui/Reveal'
 import SectionHeading from '../ui/SectionHeading'
-import { STEPS } from '../../data/landing'
+import { STEPS } from '../../../data/booker/landing'
 function Steps() {
   return (
     <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-5 py-20">

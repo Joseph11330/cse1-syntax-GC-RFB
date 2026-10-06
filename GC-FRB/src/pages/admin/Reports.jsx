@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { BarChart3, Calendar, Download, Printer } from 'lucide-react'
-import { Card } from '../components/ui'
-import { REPORT } from '../data/report'
-import { downloadReportPdf } from '../lib/reportPdf'
-import logo from '../assets/logo-sidebar.png'
+import { Card } from '../../components/ui/index'
+import { REPORT } from '../../data/admin/report'
+import { downloadReportPdf } from '../../lib/reportPdf'
+import logo from '../../assets/logo-sidebar.png'
 function Reports() {
   const [busy, setBusy] = useState(false)
   const max = Math.max(...REPORT.week.map(([, v]) => v))

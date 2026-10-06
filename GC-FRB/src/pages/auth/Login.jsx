@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { isAxiosError } from 'axios'
-import api from '../api'
-import logo from '../assets/logo-login.png'
+import api from '../../api'
+import logo from '../../assets/logo-login.png'
 function Login() {
   const nav = useNavigate()
   const [email, setEmail] = useState('')
@@ -20,7 +20,7 @@ function Login() {
       const { data } = await api.post('/api/admin/login', { email, password, remember })
       ;(remember ? localStorage : sessionStorage).setItem('gc_token', data.token)
       localStorage.setItem('gc_admin', JSON.stringify(data.admin))
-      nav('/dashboard')
+      nav('/admin/dashboard')
     } catch (err) {
       setError((isAxiosError(err) && err.response?.data?.error) || 'Unable to sign in. Please try again.')
     } finally {

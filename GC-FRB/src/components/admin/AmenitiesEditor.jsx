@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { inputCls, primaryBtnCls } from './ui'
-import { AMENITY_OPTIONS } from '../data/facilities'
+import { inputCls, primaryBtnCls } from '../ui/index'
+import { AMENITY_OPTIONS } from '../../data/admin/facilities'
 
 // Chips + "type a custom one" + optional "choose from list". Used by Add Facility and Edit Facility.
 export default function AmenitiesEditor({ value, onChange, showList = false, placeholder = 'Type a custom amenity' }) {

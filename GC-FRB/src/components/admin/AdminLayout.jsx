@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, CalendarCheck, Building2, BarChart3, LogOut, HelpCircle } from 'lucide-react'
-import logo from '../assets/logo-sidebar.png'
+import logo from '../../assets/logo-sidebar.png'
 const links = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/bookings', label: 'Bookings', icon: CalendarCheck },
-  { to: '/facilities', label: 'Facility Management', icon: Building2 },
-  { to: '/reports', label: 'Analytics', icon: BarChart3 },
+  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/admin/bookings', label: 'Bookings', icon: CalendarCheck },
+  { to: '/admin/facilities', label: 'Facility Management', icon: Building2 },
+  { to: '/admin/reports', label: 'Analytics', icon: BarChart3 },
 ]
 function LogoutModal({ onCancel, onConfirm }) {
   useEffect(() => {
@@ -60,7 +60,7 @@ function AdminLayout() {
   const logout = () => {
     localStorage.removeItem('gc_token')
     sessionStorage.removeItem('gc_token')
-    nav('/login')
+    nav('/admin/login')
   }
   return (
     <div className="app-shell flex h-screen bg-gc-900">
