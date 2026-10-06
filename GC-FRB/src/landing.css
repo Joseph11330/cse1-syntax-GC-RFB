@@ -1,0 +1,18 @@
+html { scroll-behavior: smooth; }
+
+/* Page-load sequence: hero lines rise in one after another */
+@keyframes hero-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+.hero-line { opacity: 0; animation: hero-rise .8s cubic-bezier(.2,.8,.2,1) forwards; animation-delay: var(--d, 0ms); }
+
+@keyframes orb-drift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-30px, 24px); } }
+.hero-orb { animation: orb-drift 14s ease-in-out infinite; }
+
+/* Scroll reveal */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
+.reveal[data-seen="true"] { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero-line, .reveal { opacity: 1; transform: none; animation: none; transition: none; }
+  .hero-orb { animation: none; }
+}
