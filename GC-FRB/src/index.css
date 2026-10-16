@@ -10,9 +10,10 @@
   --color-gc-500: #3aa535;
   --color-gc-100: #e6f3e4;
   --color-gc-50: #f3faf2;
+  --color-gold-400: #e8b93d;
 }
 
-body { @apply bg-gc-950 font-sans text-slate-800 antialiased; margin: 0; }
+body { @apply bg-white font-sans text-slate-800 antialiased; margin: 0; }
 #root { width: 100%; max-width: none; border: 0; text-align: left; display: block; }
 
 /* ---------- Print: A4 only ---------- */
@@ -39,3 +40,22 @@ body { @apply bg-gc-950 font-sans text-slate-800 antialiased; margin: 0; }
 @keyframes modal-pop { from { opacity: 0; transform: translateY(8px) scale(.95) } to { opacity: 1; transform: none } }
 .modal-backdrop { animation: modal-fade .15s ease-out }
 .modal-pop { animation: modal-pop .2s cubic-bezier(.2,.9,.3,1.2) }
+
+/* ---------- Motion (admin) ---------- */
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+@keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes toast-in { from { opacity: 0; transform: translateX(16px) } to { opacity: 1; transform: none } }
+@keyframes grow-y { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+@keyframes grow-x { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+.anim-fade-up { animation: fade-up .45s cubic-bezier(.2,.8,.2,1) both }
+.anim-pop { animation: pop .14s ease-out both }
+.anim-toast { animation: toast-in .3s cubic-bezier(.2,.8,.2,1) both }
+.anim-grow-y { animation: grow-y .7s cubic-bezier(.2,.8,.2,1) both }
+.anim-grow-x { animation: grow-x .8s cubic-bezier(.2,.8,.2,1) both }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up, .anim-pop, .anim-toast, .anim-grow-y, .anim-grow-x, .modal-backdrop, .modal-pop { animation: none !important }
+}
+
+/* Slim scrollbars for the admin panel */
+.app-main { scrollbar-width: thin; scrollbar-color: #c4d3c4 transparent; }

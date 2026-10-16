@@ -1,16 +1,18 @@
-# React + Vite
+# GC-FRB (frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite + Tailwind v4. **One single-page app** (one `index.html`, client-side routing) split into two
+fully separate portals, each living in ONE file and loaded as its own chunk:
 
-Currently, two official plugins are available:
+| URL        | File                            | What's inside                                                                 |
+| ---------- | ------------------------------- | ----------------------------------------------------------------------------- |
+| `/admin/*` | `src/admin/AdminDashboard.jsx`  | login, dashboard, bookings, booking details, new booking, facilities, facility details, reports |
+| `/*`       | `src/booker/BookerApp.jsx`      | landing page, booking flow (`/book`, placeholder)                             |
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+`src/App.jsx` only decides which portal to load. Shared bits: `src/api.js`, `src/lib/reportPdf.js`, `src/assets`, `src/index.css`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Run
+```bash
+cp env.example .env.local   # VITE_USE_MOCK=true lets you log in without the backend
+npm install
+npm run dev                 # http://localhost:5173/admin/login
+```
