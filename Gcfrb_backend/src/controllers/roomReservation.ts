@@ -1,79 +1,128 @@
 import { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
+import {
+    ACTIVE_STATUSES,
+    BOOKING_SELECT,
+    displayBuilding,
+    displayRoomType,
+    isDateStr,
+    isUuid,
+    manilaDate,
+    manilaMinutes,
+    ordinalFloor,
+    overlaps,
+    parseClock,
+    publicBooking,
+    roomName,
+    shapeBooking,
+    bookingReference,
+} from '../lib/bookings';
+import { createBooking } from '../lib/bookingService';
+import { cancelMyBooking } from './studentDashboard';
 
-const DISCOVERABLE_STATUSES = ['available', 'reserved', 'maintenance'];
+/* ------------------------------------------------------------------ *
+ * Book-a-room flow — shapes match GC-FRB/src/booker/BookerApp.jsx
+ *
+ *   GET  /api/rooms?building&date&start_time&end_time&headcount&amenities
+ *        -> { rooms: [{ id, name, code, building, floor, capacity, layout, amenities, status, is_free }] }
+ *   GET  /api/rooms/:id      -> { room: { ...above, overview, rules, inclusions } }
+ *   GET  /api/addons         -> { addons: [{ name, price }] }
+ *   POST /api/reservations   -> { reservation: { id, reference_no, ... }, qr: { payload } }
+ *   GET  /api/reservations   -> { reservations: [...] }
+ *   GET  /api/reservations/:id, DELETE /api/reservations/:id
+ * ------------------------------------------------------------------ */
+
+// There is no add-ons table yet, so prices live here (same list the UI falls back to).
+const ADDONS = [
+    { name: 'Presentation clicker', price: 150 },
+    { name: 'Extension cords', price: 100 },
+    { name: 'Extra microphones', price: 250 },
+];
+
+const DEFAULT_RULES = [
+    'Cancel at least 2 hours before your slot to avoid a no-show mark.',
+    'Leave the room in the layout you found it, or as booked.',
+    "Exceeding your booked time is subject to the next reservation's priority.",
+];
+
+/** rooms.amenities (text[]) is optional — the table doesn't have it yet, so default to none. */
+const roomAmenities = (r: any): string[] => (Array.isArray(r.amenities) ? r.amenities.map(String) : []);
+
+function shapeRoom(r: any, status: 'available' | 'reserved' | 'maintenance') {
+    return {
+        id: r.room_id,
+        name: roomName(r),
+        code: r.room_number ?? null,
+        building: displayBuilding(r.building),
+        floor: ordinalFloor(r.floor),
+        capacity: r.capacity ?? 0,
+        layout: displayRoomType(r.room_type),
+        amenities: roomAmenities(r),
+        status,
+        is_free: status === 'available',
+    };
+}
+
+/** "09:00" (24h from the UI) or "09:00 AM" -> minutes */
+const clockQuery = (v: unknown): number | null => (typeof v === 'string' ? parseClock(v) : null);
 
 export const listRooms = async (req: Request, res: Response) => {
     try {
-        const {
-            building,
-            date,
-            start_time,
-            end_time,
-            headcount,
-            amenities,
-        } = req.query as Record<string, string | undefined>;
+        const building = String(req.query.building ?? '').trim();
+        const date = req.query.date;
+        const startMin = clockQuery(req.query.start_time);
+        const endMin = clockQuery(req.query.end_time);
+        const headcount = Number(req.query.headcount) || 0;
+        const wantedAmenities = String(req.query.amenities ?? '')
+            .split(',')
+            .map((a) => a.trim().toLowerCase())
+            .filter(Boolean);
 
-        let query = supabase
+        const { data: rooms, error } = await supabase
             .from('rooms')
-            .select(`
-        room_id, name, building, floor, capacity,
-        layout, status, is_active, image_url,
-        room_amenities ( amenity )
-      `)
-            .eq('is_active', true)
-            .in('status', DISCOVERABLE_STATUSES);
+            .select('*')
+            .order('building', { ascending: true })
+            .order('room_name', { ascending: true });
 
-        if (building && building !== 'All Buildings') {
-            query = query.eq('building', building);
-        }
-        if (headcount) {
-            query = query.gte('capacity', Number(headcount));
-        }
-        if (amenities) {
-            const list = String(amenities).split(',').map((a) => a.trim()).filter(Boolean);
-            if (list.length > 0) {
-                query = query.contains('room_amenities.amenity', list);
-            }
-        }
-
-        const { data: rooms, error } = await query;
         if (error) {
             console.error('listRooms error:', error);
             return res.status(500).json({ error: 'Failed to load rooms' });
         }
 
-        let filtered = rooms ?? [];
+        // which rooms are taken for the slot the student is looking at
+        const busyRooms = new Set<number>();
+        if (isDateStr(date) && startMin !== null && endMin !== null && endMin > startMin) {
+            const { data: booked, error: bookedErr } = await supabase
+                .from('bookings')
+                .select('room_id, start_time, end_time')
+                .eq('booking_date', date)
+                .in('booking_status', ACTIVE_STATUSES);
 
-        if (date && start_time && end_time) {
-            const slotStart = new Date(`${date}T${start_time}:00`).toISOString();
-            const slotEnd = new Date(`${date}T${end_time}:00`).toISOString();
-
-            const { data: conflicts } = await supabase
-                .from('reservations')
-                .select('room_id')
-                .in('status', ['approved', 'confirmed'])
-                .lt('start_time', slotEnd)
-                .gt('end_time', slotStart);
-
-            const busy = new Set((conflicts ?? []).map((c: any) => c.room_id));
-            filtered = filtered.filter((r: any) => !busy.has(r.room_id));
+            if (bookedErr) {
+                console.error('listRooms bookings error:', bookedErr);
+                return res.status(500).json({ error: 'Failed to check availability' });
+            }
+            for (const b of (booked ?? []) as any[]) {
+                const s = parseClock(b.start_time);
+                const e = parseClock(b.end_time);
+                if (s !== null && e !== null && overlaps(startMin, endMin, s, e)) busyRooms.add(b.room_id);
+            }
         }
 
-        const shaped = filtered.map((r: any) => ({
-            id: r.room_id,
-            name: r.name,
-            building: r.building,
-            floor: r.floor,
-            capacity: r.capacity,
-            layout: r.layout,
-            status: r.status,
-            image_url: r.image_url,
-            amenities: (r.room_amenities ?? []).map((a: any) => a.amenity),
-            is_free: true,
-        }));
+        const wantBuilding = building && building !== 'All Buildings' ? displayBuilding(building).toLowerCase() : '';
 
-        return res.json({ count: shaped.length, rooms: shaped });
+        const result = ((rooms ?? []) as any[])
+            .filter((r) => !wantBuilding || displayBuilding(r.building).toLowerCase() === wantBuilding)
+            .filter((r) => !headcount || (r.capacity ?? 0) >= headcount)
+            .filter((r) => {
+                const have = roomAmenities(r).map((a) => a.toLowerCase());
+                return wantedAmenities.every((a) => have.includes(a));
+            })
+            .map((r) =>
+                shapeRoom(r, r.is_available === false ? 'maintenance' : busyRooms.has(r.room_id) ? 'reserved' : 'available')
+            );
+
+        return res.json({ rooms: result });
     } catch (err) {
         console.error('listRooms error:', err);
         return res.status(500).json({ error: 'Internal server error' });
@@ -82,41 +131,22 @@ export const listRooms = async (req: Request, res: Response) => {
 
 export const getRoom = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid room id' });
 
-        const { data, error } = await supabase
-            .from('rooms')
-            .select(`
-        room_id, name, building, floor, capacity,
-        layout, overview, status, is_active, image_url,
-        room_amenities ( amenity ),
-        room_inclusions ( inclusion )
-      `)
-            .eq('room_id', id)
-            .single();
-
-        if (error || !data) {
-            return res.status(404).json({ error: 'Room not found' });
+        const { data: r, error } = await supabase.from('rooms').select('*').eq('room_id', id).maybeSingle();
+        if (error) {
+            console.error('getRoom error:', error);
+            return res.status(500).json({ error: 'Failed to load room' });
         }
+        if (!r) return res.status(404).json({ error: 'Room not found' });
 
         return res.json({
             room: {
-                id: data.room_id,
-                name: data.name,
-                building: data.building,
-                floor: data.floor,
-                capacity: data.capacity,
-                layout: data.layout,
-                overview: data.overview,
-                status: data.status,
-                image_url: data.image_url,
-                amenities: (data.room_amenities ?? []).map((a: any) => a.amenity),
-                inclusions: (data.room_inclusions ?? []).map((i: any) => i.inclusion),
-                rules: [
-                    'Cancel at least 2 hours before your slot to avoid a no-show mark.',
-                    'Leave the room in the layout you found it, or as booked.',
-                    'Exceeding your booked time is subject to the next reservation\'s priority.',
-                ],
+                ...shapeRoom(r, r.is_available === false ? 'maintenance' : 'available'),
+                overview: r.overview ?? r.description ?? '',
+                rules: DEFAULT_RULES,
+                inclusions: [],
             },
         });
     } catch (err) {
@@ -125,179 +155,86 @@ export const getRoom = async (req: Request, res: Response) => {
     }
 };
 
-export const listAddons = async (_req: Request, res: Response) => {
-    try {
-        const { data, error } = await supabase
-            .from('reservation_addons')
-            .select('addon_id, name, price')
-            .eq('is_active', true);
-
-        if (error) {
-            console.error('listAddons error:', error);
-            return res.status(500).json({ error: 'Failed to load add-ons' });
-        }
-
-        return res.json({
-            addons: (data ?? []).map((a: any) => ({
-                id: a.addon_id,
-                name: a.name,
-                price: Number(a.price),
-            })),
-        });
-    } catch (err) {
-        console.error('listAddons error:', err);
-        return res.status(500).json({ error: 'Internal server error' });
-    }
-};
-
-function generateReferenceNo() {
-    const n = Math.floor(1000 + Math.random() * 9000);
-    return `GC-${n}`;
-}
+export const listAddons = async (_req: Request, res: Response) => res.json({ addons: ADDONS });
 
 export const createReservation = async (req: Request, res: Response) => {
     try {
         const userId = req.user?.id;
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const {
-            room_id,
-            title,
-            description,
-            department,
-            start_time,
-            end_time,
+        const b = req.body ?? {};
+        const roomId = Number(b.room_id);
+        const title = String(b.title ?? '').trim();
+        const attendees = b.attendees === undefined || b.attendees === null || b.attendees === '' ? null : Number(b.attendees);
+
+        if (!Number.isInteger(roomId)) return res.status(400).json({ error: 'Choose a room' });
+        if (!title) return res.status(400).json({ error: 'Event title is required' });
+        if (attendees !== null && (!Number.isInteger(attendees) || attendees < 1)) {
+            return res.status(400).json({ error: 'Number of guests must be a whole number' });
+        }
+        if (b.agree_terms !== true) return res.status(400).json({ error: 'You must accept the terms to continue' });
+
+        const start = new Date(b.start_time);
+        const end = new Date(b.end_time);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return res.status(400).json({ error: 'Invalid start or end time' });
+        }
+
+        // the bookings table keeps a date plus "09:00 AM" style times, in campus time
+        const date = manilaDate(start);
+        if (manilaDate(end) !== date) {
+            return res.status(400).json({ error: 'A booking must start and end on the same day' });
+        }
+
+        // add-ons: only known ones count, price comes from the server
+        const requested: string[] = Array.isArray(b.equipment_requested) ? b.equipment_requested.map(String) : [];
+        const chosen = ADDONS.filter((a) => requested.includes(a.name));
+        const addonsCost = chosen.reduce((sum, a) => sum + a.price, 0);
+        const method = b.payment_method === 'gcash' ? 'gcash' : 'card';
+
+        const created = await createBooking({
+            userId,
+            roomId,
+            date,
+            startMin: manilaMinutes(start),
+            endMin: manilaMinutes(end) || 24 * 60,
+            purpose: title,
+            eventType: b.event_type,
             attendees,
-            invitees,
-            equipment_requested,
-            special_instructions,
-            payment_method,
-            gcash_number,
-            agree_terms,
-        } = req.body;
-
-        if (!room_id || !title || !start_time || !end_time || !attendees) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-        if (!agree_terms) {
-            return res.status(400).json({ error: 'You must agree to the terms and conditions' });
-        }
-
-        const start = new Date(start_time);
-        const end = new Date(end_time);
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-            return res.status(400).json({ error: 'Invalid time range' });
-        }
-
-        const { data: room, error: roomErr } = await supabase
-            .from('rooms')
-            .select('room_id, capacity, status')
-            .eq('room_id', room_id)
-            .single();
-
-        if (roomErr || !room) {
-            return res.status(404).json({ error: 'Room not found' });
-        }
-        if (room.status !== 'available') {
-            return res.status(409).json({ error: 'Room is not available for booking' });
-        }
-        if (attendees > room.capacity) {
-            return res.status(400).json({
-                error: `Attendees exceed room capacity (${room.capacity})`,
-            });
-        }
-
-        const { data: conflict } = await supabase
-            .from('reservations')
-            .select('reservation_id')
-            .eq('room_id', room_id)
-            .in('status', ['pending', 'approved', 'confirmed'])
-            .lt('start_time', end.toISOString())
-            .gt('end_time', start.toISOString());
-
-        if (conflict && conflict.length > 0) {
-            return res.status(409).json({ error: 'Room already booked for that time slot' });
-        }
-
-        let addonsCost = 0;
-        let equipmentList: string[] = [];
-        if (Array.isArray(equipment_requested) && equipment_requested.length > 0) {
-            equipmentList = equipment_requested;
-
-            const { data: addonRows } = await supabase
-                .from('reservation_addons')
-                .select('addon_id, name, price')
-                .in('name', equipmentList)
-                .eq('is_active', true);
-
-            addonsCost = (addonRows ?? []).reduce(
-                (sum: number, a: any) => sum + Number(a.price),
-                0
-            );
-        }
-
-        const durationHours = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60));
-
-        const subtotal = 0;
-        const total = subtotal + addonsCost;
-
-        const reference_no = generateReferenceNo();
-
-        const { data: reservation, error: insErr } = await supabase
-            .from('reservations')
-            .insert({
-                user_id: userId,
-                room_id,
-                reference_no,
-                title,
-                description: description ?? null,
-                department: department ?? null,
-                start_time: start.toISOString(),
-                end_time: end.toISOString(),
-                duration_hours: durationHours,
+            // saved only if these columns exist on `bookings` (see migration notes); otherwise ignored
+            extras: {
+                description: b.description ?? null,
+                department: b.department ?? null,
                 attendees,
-                invitees: invitees ?? null,
-                equipment_requested: equipmentList,
-                special_instructions: special_instructions ?? null,
-                subtotal,
+                invitees: b.invitees ?? null,
+                equipment_requested: chosen.map((a) => a.name),
+                special_instructions: b.special_instructions ?? null,
+                payment_method: method,
+                gcash_number: method === 'gcash' ? String(b.gcash_number ?? '').replace(/\D/g, '') || null : null,
                 addons_cost: addonsCost,
-                total_amount: total,
-                payment_method: payment_method ?? null,
-                gcash_number: gcash_number ?? null,
-                status: 'pending',
-                created_at: new Date().toISOString(),
-            })
-            .select()
-            .single();
+            },
+        });
 
-        if (insErr || !reservation) {
-            console.error('createReservation insert error:', insErr);
-            return res.status(500).json({ error: 'Failed to create reservation' });
-        }
+        if (!created.ok) return res.status(created.status).json({ error: created.error });
 
-        const qrPayload = `GC-BOOK|${reference_no}|${reservation.reservation_id}`;
+        const row = created.data.booking;
+        const ref = bookingReference(row.booking_id);
 
         return res.status(201).json({
-            message: 'Booking request sent',
             reservation: {
-                id: reservation.reservation_id,
-                reference_no,
-                room_id,
+                id: row.booking_id,
+                reference_no: ref,
+                room_id: roomId,
+                room: roomName(created.data.room),
                 title,
-                start_time: reservation.start_time,
-                end_time: reservation.end_time,
-                duration_hours: durationHours,
+                start_time: start.toISOString(),
+                end_time: end.toISOString(),
                 attendees,
-                status: reservation.status,
-                subtotal,
+                status: 'pending',
                 addons_cost: addonsCost,
-                total_amount: total,
-                payment_method: reservation.payment_method ?? null,
+                payment_method: method,
             },
-            qr: {
-                payload: qrPayload,
-                hint: 'Show this code at the door on arrival',
-            },
+            qr: { payload: `GC-BOOK|${ref}|${row.booking_id}` },
         });
     } catch (err) {
         console.error('createReservation error:', err);
@@ -310,28 +247,15 @@ export const listMyReservations = async (req: Request, res: Response) => {
         const userId = req.user?.id;
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const status = req.query.status as string | undefined;
-
-        let query = supabase
-            .from('reservations')
-            .select(`
-        reservation_id, reference_no, title, start_time, end_time,
-        duration_hours, attendees, status,
-        subtotal, addons_cost, total_amount, payment_method,
-        rooms:room_id ( name, building, floor )
-      `)
-            .eq('user_id', userId)
-            .order('start_time', { ascending: false });
-
-        if (status) query = query.eq('status', status);
-
-        const { data, error } = await query;
+        const { data, error } = await supabase.from('bookings').select(BOOKING_SELECT).eq('user_id', userId);
         if (error) {
             console.error('listMyReservations error:', error);
             return res.status(500).json({ error: 'Failed to load reservations' });
         }
 
-        return res.json({ reservations: data ?? [] });
+        const now = Date.now();
+        const rows = ((data ?? []) as any[]).map((r) => shapeBooking(r, now)).sort((a, b) => b.startMs - a.startMs);
+        return res.json({ reservations: rows.map(publicBooking) });
     } catch (err) {
         console.error('listMyReservations error:', err);
         return res.status(500).json({ error: 'Internal server error' });
@@ -340,75 +264,29 @@ export const listMyReservations = async (req: Request, res: Response) => {
 
 export const getReservation = async (req: Request, res: Response) => {
     try {
-        const userId = req.user?.id;
-        const { id } = req.params;
-        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        const id = req.params.id;
+        if (!isUuid(id)) return res.status(400).json({ error: 'Invalid reservation id' });
 
         const { data, error } = await supabase
-            .from('reservations')
-            .select(`
-        reservation_id, reference_no, title, description, department,
-        start_time, end_time, duration_hours, attendees, invitees,
-        equipment_requested, special_instructions,
-        subtotal, addons_cost, total_amount,
-        payment_method, gcash_number, status,
-        created_at, decision_note, decided_at,
-        rooms:room_id ( name, building, floor, image_url )
-      `)
-            .eq('reservation_id', id)
-            .single();
+            .from('bookings')
+            .select(BOOKING_SELECT)
+            .eq('booking_id', id)
+            .maybeSingle();
 
-        if (error || !data) {
+        if (error) {
+            console.error('getReservation error:', error);
+            return res.status(500).json({ error: 'Failed to load reservation' });
+        }
+        // students can only open their own bookings (a missing one and someone else's look the same)
+        if (!data || (req.user?.role !== 'admin' && String((data as any).user_id) !== String(req.user?.id))) {
             return res.status(404).json({ error: 'Reservation not found' });
         }
 
-        return res.json({ reservation: data });
+        return res.json({ reservation: publicBooking(shapeBooking(data, Date.now())) });
     } catch (err) {
         console.error('getReservation error:', err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 };
 
-export const cancelReservation = async (req: Request, res: Response) => {
-    try {
-        const userId = req.user?.id;
-        const { id } = req.params;
-        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-        const { data: existing, error: fetchErr } = await supabase
-            .from('reservations')
-            .select('reservation_id, user_id, status')
-            .eq('reservation_id', id)
-            .single();
-
-        if (fetchErr || !existing) {
-            return res.status(404).json({ error: 'Reservation not found' });
-        }
-        if (existing.user_id !== userId) {
-            return res.status(403).json({ error: 'You can only cancel your own reservations' });
-        }
-        if (existing.status !== 'pending') {
-            return res.status(409).json({ error: 'Only pending reservations can be cancelled' });
-        }
-
-        const { data, error } = await supabase
-            .from('reservations')
-            .update({
-                status: 'cancelled',
-                decided_at: new Date().toISOString(),
-            })
-            .eq('reservation_id', id)
-            .select()
-            .single();
-
-        if (error) {
-            console.error('cancelReservation error:', error);
-            return res.status(500).json({ error: 'Failed to cancel reservation' });
-        }
-
-        return res.json({ message: 'Reservation cancelled', reservation: data });
-    } catch (err) {
-        console.error('cancelReservation error:', err);
-        return res.status(500).json({ error: 'Internal server error' });
-    }
-};
+export const cancelReservation = cancelMyBooking;

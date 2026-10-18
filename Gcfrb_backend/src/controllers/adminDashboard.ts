@@ -1,142 +1,143 @@
 import { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
+import {
+    ACTIVE_STATUSES,
+    APPROVED_STATUSES,
+    BOOKING_SELECT,
+    isUuid,
+    manilaDate,
+    norm,
+    parseClock,
+    publicBooking,
+    shapeBooking,
+    toMs,
+} from '../lib/bookings';
+import { decideBooking } from '../lib/bookingService';
 
-function startOfToday() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+/* ------------------------------------------------------------------ *
+ * Admin dashboard — works on bookings / rooms / users / booking_approvals.
+ *
+ *   GET   /api/admin/dashboard
+ *     { stats:            { facilities, activeRooms, todaysBookings, utilizationPct, pendingCount },
+ *       pendingApprovals: [booking],         // oldest slot first, upcoming only
+ *       roomStatus:       { available, reserved, maintenance },
+ *       todaysSchedule:   [{ id, reference, facility, building, start, end, purpose, who }] }
+ *   GET   /api/admin/bookings?status=&date=  -> { bookings: [booking] }
+ *   GET   /api/admin/reservations/pending    -> { reservations: [booking] }
+ *   PATCH /api/admin/reservations/:id/approve | /reject   body: { note? }
+ *
+ *   booking = { id, reference, who, email, facility, building, date, start, end,
+ *               startTime, endTime, purpose, eventType, status }
+ * ------------------------------------------------------------------ */
+
+const ADMIN_BOOKING_SELECT = `${BOOKING_SELECT.trimEnd()},
+    users ( full_name, email )`;
+
+// Utilization = approved hours this week / (bookable rooms × 8 h × 5 days)
+const HOURS_PER_DAY = 8;
+const DAYS_PER_WEEK = 5;
+
+/** Monday and Sunday (YYYY-MM-DD) of the week containing the given Manila date. */
+function weekRange(today: string): [string, string] {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    const monday = d.toISOString().slice(0, 10);
+    d.setUTCDate(d.getUTCDate() + 6);
+    return [monday, d.toISOString().slice(0, 10)];
 }
 
-function endOfToday() {
-    const d = new Date();
-    d.setHours(23, 59, 59, 999);
-    return d;
-}
-
-function startOfWeek() {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-    monday.setHours(0, 0, 0, 0);
-    return monday;
-}
-
-function endOfWeek() {
-    const d = startOfWeek();
-    d.setDate(d.getDate() + 6);
-    d.setHours(23, 59, 59, 999);
-    return d;
-}
-
-export const getAdminDashboard = async (req: Request, res: Response) => {
+export const getAdminDashboard = async (_req: Request, res: Response) => {
     try {
-        const todayStart = startOfToday().toISOString();
-        const todayEnd = endOfToday().toISOString();
-        const weekStart = startOfWeek().toISOString();
-        const weekEnd = endOfWeek().toISOString();
+        const now = Date.now();
+        const today = manilaDate(new Date(now));
+        const [monday, sunday] = weekRange(today);
 
-        const [
-            facilitiesRes,
-            activeRoomsRes,
-            todaysBookingsRes,
-            pendingRes,
-            roomStatusRes,
-            weekBookingsRes,
-        ] = await Promise.all([
+        const [roomsRes, pendingRes, todayRes, weekRes] = await Promise.all([
+            supabase.from('rooms').select('room_id, room_name, room_number, building, is_available'),
             supabase
-                .from('rooms')
-                .select('*', { count: 'exact', head: true })
-                .eq('is_active', true),
+                .from('bookings')
+                .select(ADMIN_BOOKING_SELECT)
+                .eq('booking_status', 'pending')
+                .gte('booking_date', today),
             supabase
-                .from('rooms')
-                .select('*', { count: 'exact', head: true })
-                .eq('is_active', true)
-                .eq('status', 'available'),
+                .from('bookings')
+                .select(ADMIN_BOOKING_SELECT)
+                .eq('booking_date', today)
+                .in('booking_status', ACTIVE_STATUSES),
             supabase
-                .from('reservations')
-                .select('*', { count: 'exact', head: true })
-                .gte('start_time', todayStart)
-                .lte('start_time', todayEnd)
-                .in('status', ['approved', 'pending']),
-            supabase
-                .from('reservations')
-                .select(`
-            reservation_id,
-            reference_no,
-            purpose,
-            start_time,
-            end_time,
-            attendees,
-            status,
-            users:user_id ( full_name ),
-            rooms:room_id ( name, building )
-        `)
-                .eq('status', 'pending')
-                .order('start_time', { ascending: true })
-                .limit(10),
-            supabase
-                .from('rooms')
-                .select('status'),
-            supabase
-                .from('reservations')
+                .from('bookings')
                 .select('room_id, start_time, end_time')
-                .gte('start_time', weekStart)
-                .lte('start_time', weekEnd)
-                .eq('status', 'approved'),
+                .in('booking_status', APPROVED_STATUSES)
+                .gte('booking_date', monday)
+                .lte('booking_date', sunday),
         ]);
 
-        const facilities = facilitiesRes.count ?? 0;
-        const activeRooms = activeRoomsRes.count ?? 0;
-        const todaysBookings = todaysBookingsRes.count ?? 0;
+        const failed = roomsRes.error ?? pendingRes.error ?? todayRes.error ?? weekRes.error;
+        if (failed) {
+            console.error('getAdminDashboard query error:', failed);
+            return res.status(500).json({ error: 'Failed to load dashboard' });
+        }
 
-        const roomStatusCounts = { available: 0, reserved: 0, maintenance: 0 };
-        (roomStatusRes.data ?? []).forEach((r: any) => {
-            const s = String(r.status ?? '').toLowerCase();
-            if (s === 'available') roomStatusCounts.available++;
-            else if (s === 'reserved') roomStatusCounts.reserved++;
-            else if (s === 'maintenance' || s === 'under_maintenance') roomStatusCounts.maintenance++;
-        });
+        const rooms = (roomsRes.data ?? []) as any[];
+        const todays = ((todayRes.data ?? []) as any[]).map((r) => shapeBooking(r, now));
 
-        const weekBookings = weekBookingsRes.data ?? [];
-        const bookedHours = weekBookings.reduce((sum: number, b: any) => {
-            const ms = new Date(b.end_time).getTime() - new Date(b.start_time).getTime();
-            return sum + ms / (1000 * 60 * 60);
-        }, 0);
+        /* ---- rooms ---- */
+        const inUseNow = new Set<number>();
+        for (const r of (todayRes.data ?? []) as any[]) {
+            if (!APPROVED_STATUSES.includes(norm(r.booking_status))) continue;
+            const s = parseClock(r.start_time);
+            const e = parseClock(r.end_time);
+            if (s !== null && e !== null && toMs(today, s) <= now && toMs(today, e) > now) inUseNow.add(r.room_id);
+        }
+        const roomStatus = { available: 0, reserved: 0, maintenance: 0 };
+        for (const room of rooms) {
+            if (room.is_available === false) roomStatus.maintenance++;
+            else if (inUseNow.has(room.room_id)) roomStatus.reserved++;
+            else roomStatus.available++;
+        }
+        const activeRooms = rooms.filter((r) => r.is_available !== false).length;
 
-        const openHours = 8;
-        const workDays = 5;
-        const totalAvailableHours = activeRooms * openHours * workDays;
-        const utilizationPct = totalAvailableHours > 0
-            ? Math.round((bookedHours / totalAvailableHours) * 100)
-            : 0;
+        /* ---- utilization this week ---- */
+        let bookedHours = 0;
+        for (const b of (weekRes.data ?? []) as any[]) {
+            const s = parseClock(b.start_time);
+            const e = parseClock(b.end_time);
+            if (s !== null && e !== null && e > s) bookedHours += (e - s) / 60;
+        }
+        const capacityHours = activeRooms * HOURS_PER_DAY * DAYS_PER_WEEK;
+        const utilizationPct = capacityHours ? Math.min(100, Math.round((bookedHours / capacityHours) * 100)) : 0;
 
-        const pendingApprovals = (pendingRes.data ?? []).map((r: any) => ({
-            id: r.reservation_id,
-            reference: r.reference_no,
-            name: r.users?.full_name ?? 'Unknown',
-            facility: r.rooms?.name ?? 'Unknown',
-            building: r.rooms?.building ?? '',
-            dateTime: `${r.start_time} – ${r.end_time}`,
-            purpose: r.purpose,
-            attendees: r.attendees,
-            status: r.status,
-        }));
+        /* ---- pending list: only slots that haven't ended ---- */
+        const pending = ((pendingRes.data ?? []) as any[])
+            .map((r) => shapeBooking(r, now))
+            .filter((b) => b.endMs >= now)
+            .sort((a, b) => a.startMs - b.startMs);
+
+        const todaysSchedule = todays
+            .filter((b) => APPROVED_STATUSES.includes(b.status) || b.status === 'completed')
+            .sort((a, b) => a.startMs - b.startMs)
+            .map((b) => ({
+                id: b.id,
+                reference: b.reference,
+                facility: b.facility,
+                building: b.building,
+                start: b.start,
+                end: b.end,
+                purpose: b.purpose,
+                who: b.who ?? '',
+            }));
 
         return res.json({
             stats: {
-                facilities,
+                facilities: rooms.length,
                 activeRooms,
-                todaysBookings,
+                todaysBookings: todays.length,
                 utilizationPct,
+                pendingCount: pending.length,
             },
-            pendingApprovals,
-            roomStatus: roomStatusCounts,
-            utilizationWeek: {
-                bookedHours: Math.round(bookedHours),
-                availableHours: totalAvailableHours,
-                percentage: utilizationPct,
-            },
+            pendingApprovals: pending.slice(0, 10).map(publicBooking),
+            roomStatus,
+            todaysSchedule,
         });
     } catch (err) {
         console.error('getAdminDashboard error:', err);
@@ -144,108 +145,83 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
     }
 };
 
+export const listAllBookings = async (req: Request, res: Response) => {
+    try {
+        let query = supabase.from('bookings').select(ADMIN_BOOKING_SELECT).limit(500);
+        const date = req.query.date;
+        if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) query = query.eq('booking_date', date);
+
+        const { data, error } = await query;
+        if (error) {
+            console.error('listAllBookings error:', error);
+            return res.status(500).json({ error: 'Failed to load bookings' });
+        }
+
+        const now = Date.now();
+        let rows = ((data ?? []) as any[]).map((r) => shapeBooking(r, now));
+
+        // filter on the status the UI shows (approved + past = completed)
+        const wanted = norm(req.query.status);
+        if (wanted) {
+            const accept =
+                wanted === 'approved' || wanted === 'confirmed'
+                    ? APPROVED_STATUSES
+                    : wanted === 'cancelled'
+                        ? ['cancelled', 'rejected', 'declined']
+                        : [wanted];
+            rows = rows.filter((b) => accept.includes(b.status));
+        }
+
+        rows.sort((a, b) => b.startMs - a.startMs);
+        return res.json({ bookings: rows.map(publicBooking) });
+    } catch (err) {
+        console.error('listAllBookings error:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
 export const listPendingReservations = async (_req: Request, res: Response) => {
     try {
         const { data, error } = await supabase
-            .from('reservations')
-            .select(`
-        reservation_id,
-        reference_no,
-        purpose,/
-        start_time,
-        end_time,
-        attendees,
-        status,
-        users:user_id ( full_name, email ),
-        rooms:room_id ( name, building )
-    `)
-            .eq('status', 'pending')
-            .order('start_time', { ascending: true });
+            .from('bookings')
+            .select(ADMIN_BOOKING_SELECT)
+            .eq('booking_status', 'pending');
 
         if (error) {
             console.error('listPendingReservations error:', error);
             return res.status(500).json({ error: 'Failed to load pending reservations' });
         }
 
-        return res.json({ reservations: data ?? [] });
+        const now = Date.now();
+        const rows = ((data ?? []) as any[]).map((r) => shapeBooking(r, now)).sort((a, b) => a.startMs - b.startMs);
+        return res.json({ reservations: rows.map(publicBooking) });
     } catch (err) {
         console.error('listPendingReservations error:', err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 };
 
-export const approveReservation = async (req: Request, res: Response) => {
+const decide = (decision: 'approved' | 'rejected') => async (req: Request, res: Response) => {
     try {
-        const id = req.params.id;
         const adminId = req.user?.id;
-        const note = req.body?.note ?? null;
-
         if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const { data: conflict } = await supabase
-            .from('reservations')
-            .select('reservation_id')
-            .eq('room_id', req.body.room_id)
-            .eq('status', 'approved')
-            .lt('start_time', req.body.end_time)
-            .gt('end_time', req.body.start_time);
+        const id = req.params.id;
+        if (!isUuid(id)) return res.status(400).json({ error: 'Invalid booking id' });
 
-        if (conflict && conflict.length > 0) {
-            return res.status(409).json({ error: 'Time slot already booked for this room' });
-        }
+        const note = typeof req.body?.note === 'string' && req.body.note.trim() ? req.body.note.trim() : null;
+        const result = await decideBooking({ bookingId: id, adminId, decision, note });
+        if (!result.ok) return res.status(result.status).json({ error: result.error });
 
-        const { data, error } = await supabase
-            .from('reservations')
-            .update({
-                status: 'approved',
-                decided_by: adminId,
-                decided_at: new Date().toISOString(),
-                decision_note: note,
-            })
-            .eq('reservation_id', id)
-            .select()
-            .single();
-
-        if (error) {
-            console.error('approveReservation error:', error);
-            return res.status(500).json({ error: 'Failed to approve reservation' });
-        }
-
-        return res.json({ message: 'Reservation approved', reservation: data });
+        return res.json({
+            message: decision === 'approved' ? 'Reservation approved' : 'Reservation rejected',
+            reservation: result.data,
+        });
     } catch (err) {
-        console.error('approveReservation error:', err);
+        console.error(`${decision} reservation error:`, err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 };
 
-export const rejectReservation = async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id;
-        const adminId = req.user?.id;
-        const note = req.body?.note ?? null;
-
-        if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
-
-        const { data, error } = await supabase
-            .from('reservations')
-            .update({
-                status: 'rejected',
-                decided_by: adminId,
-                decided_at: new Date().toISOString(),
-                decision_note: note,
-            })
-            .eq('reservation_id', id)
-            .select()
-            .single();
-
-        if (error) {
-            console.error('rejectReservation error:', error);
-            return res.status(500).json({ error: 'Failed to reject reservation' });
-        }
-
-        return res.json({ message: 'Reservation rejected', reservation: data });
-    } catch (err) {
-        console.error('rejectReservation error:', err);
-        return res.status(500).json({ error: 'Internal server error' });
-    }
-};
+export const approveReservation = decide('approved');
+export const rejectReservation = decide('rejected');

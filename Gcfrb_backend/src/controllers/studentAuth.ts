@@ -66,9 +66,20 @@ export const studentSignup = async (req: Request, res: Response) => {
 
         const password_hash = await bcrypt.hash(password, 12);
 
+        // users.username is a separate column; derive one from the email and keep it unique
+        const baseUsername = String(email).split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'student';
+        let username = baseUsername;
+        const { data: takenName } = await supabase
+            .from('users')
+            .select('user_id')
+            .eq('username', username)
+            .maybeSingle();
+        if (takenName) username = `${baseUsername}${Math.floor(1000 + Math.random() * 9000)}`;
+
         const { data, error } = await supabase
             .from('users')
             .insert({
+                username,
                 full_name,
                 email,
                 password_hash,
@@ -150,4 +161,4 @@ export const studentMe = async (req: Request, res: Response) => {
 
 export const studentLogout = async (_req: Request, res: Response) => {
     return res.json({ message: 'Logged out' });
-};
+};
