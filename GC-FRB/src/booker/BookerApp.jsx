@@ -1,25 +1,3 @@
-/* ============================================================================
- * BookerApp.jsx
- * The public "Booker" side (students / organizations) as ONE single-page-app file,
- * fully separate from the admin portal. Mounted by App.jsx at /*.
- *
- *   /       → Landing page
- *   /book   → Booking flow (placeholder – build the request form here)
- * ========================================================================== */
-/* ============================================================================
- * BookerApp.jsx
- * The public + student "Booker" side as ONE single-page-app file, fully separate
- * from the admin portal. Mounted by App.jsx at /*.
- *
- *   /            → Landing page
- *   /login       → Student login
- *   /dashboard   → Student dashboard      ┐
- *   /book        → Book flow, step 1      ├ behind login, inside the sidebar shell
- *   /my-bookings → My bookings            ┘
- *
- * Layout of this file: 1 content · 2 building blocks · 3 landing · 4 student data/session
- * · 5 login · 6 portal shell · 7 dashboard · 8 book flow (steps 1-5) · 9 my bookings · 10 routes
- * ========================================================================== */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
@@ -289,6 +267,7 @@ function Steps() {
 }
 
 function Footer() {
+  const nav = useNavigate()
   return (
     <footer className="bg-gc-950 text-gc-100">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:grid-cols-2 lg:grid-cols-4">
@@ -305,7 +284,7 @@ function Footer() {
           </div>
         ))}
       </div>
-      <p className="border-t border-white/10 py-5 text-center text-xs text-gc-100/60">© {new Date().getFullYear()} Gordon College. All rights reserved.</p>
+      <p className="border-t border-white/10 py-5 text-center text-xs text-gc-100/60">© <span onDoubleClick={() => nav('/admin/login', { state: { showLogin: true } })} className="select-none">{new Date().getFullYear()}</span> Gordon College. All rights reserved.</p>
     </footer>
   )
 }

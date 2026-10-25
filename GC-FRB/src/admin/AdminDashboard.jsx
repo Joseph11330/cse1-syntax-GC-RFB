@@ -739,13 +739,15 @@ const makeFacilityUnavailable = async (id) => {
 
 function LoginPage() {
   const nav = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  if (hasToken()) return <Navigate to="/admin/dashboard" replace />
+  // The hidden footer link passes showLogin so the form always appears, even if an old token is saved
+  if (hasToken() && !location.state?.showLogin) return <Navigate to="/admin/dashboard" replace />
 
   const submit = async (e) => {
     e.preventDefault()
