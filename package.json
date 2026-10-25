@@ -15,14 +15,14 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.2",
+    "concurrently": "^10.0.6",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
   "scripts": {
+    "dev": "concurrently -k -n frontend,backend \"npm --prefix GC-FRB run dev\" \"npm --prefix Gcfrb_backend run dev\"",
+    "dev:backend": "npm --prefix Gcfrb_backend run dev",
     "cli:admin": "ts-node src/cli/adminTerminal.ts",
     "cli:student": "ts-node src/cli/studentTerminal.ts"
   }
-  
-
-  
 }

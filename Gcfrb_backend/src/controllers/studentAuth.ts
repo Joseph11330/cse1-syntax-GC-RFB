@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabase } from '../config/supabase';
+import { JWT_SECRET } from '../config/jwt';
 
-const JWT_SECRET = process.env.JWT_SECRET as string;
 const ACCESS_TTL = '8h';
 const REMEMBER_TTL = '30d';
 
@@ -22,6 +22,13 @@ function signToken(payload: Record<string, unknown>, remember: boolean) {
     return jwt.sign(payload, JWT_SECRET, {
         expiresIn: remember ? REMEMBER_TTL : ACCESS_TTL,
     });
+}
+
+function authenticationServiceError(error: { message?: string }, context: string) {
+    console.error(`${context}:`, error);
+    return error.message === 'Invalid API key'
+        ? 'Supabase rejected the backend API key. Check SUPABASE_SERVICE_KEY in Gcfrb_backend/.env.'
+        : 'Unable to authenticate right now';
 }
 
 //Booker sign in page
@@ -109,7 +116,9 @@ export const studentSignup = async (req: Request, res: Response) => {
 
 export const studentLogin = async (req: Request, res: Response) => {
     try {
-        const { email, password, remember = false } = req.body;
+        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const password = typeof req.body?.password === 'string' ? req.body.password : '';
+        const remember = req.body?.remember === true;
 
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
@@ -119,9 +128,13 @@ export const studentLogin = async (req: Request, res: Response) => {
             .from('users')
             .select('*')
             .eq('email', email)
-            .single();
+            .maybeSingle();
 
-        if (error || !data || !data.password_hash) {
+        if (error) {
+            return res.status(503).json({ error: authenticationServiceError(error, 'studentLogin query error') });
+        }
+
+        if (!data || !data.password_hash) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -132,7 +145,7 @@ export const studentLogin = async (req: Request, res: Response) => {
 
         const token = signToken(
             { user_id: data.user_id, role: 'student' },
-            Boolean(remember)
+            remember
         );
 
         return res.json({
@@ -146,6 +159,60 @@ export const studentLogin = async (req: Request, res: Response) => {
     }
 };
 
+export const studentGoogleLogin = async (req: Request, res: Response) => {
+    try {
+        const accessToken = typeof req.body?.access_token === 'string' ? req.body.access_token : '';
+        if (!accessToken) return res.status(400).json({ error: 'Google access token is required' });
+
+        const { data: authData, error: authError } = await supabase.auth.getUser(accessToken);
+        if (authError) {
+            if (authError.message === 'Invalid API key') {
+                return res.status(503).json({
+                    error: 'Supabase rejected the backend API key. Check SUPABASE_SERVICE_KEY in Gcfrb_backend/.env.',
+                });
+            }
+            console.error('studentGoogleLogin token verification error:', authError.message);
+            return res.status(401).json({ error: 'Google sign-in could not be verified. Please try again.' });
+        }
+
+        const googleUser = authData.user;
+        const providers: unknown[] = googleUser.app_metadata?.providers ?? [];
+        if (
+            !googleUser.email ||
+            !googleUser.email_confirmed_at ||
+            (googleUser.app_metadata?.provider !== 'google' && !providers.includes('google'))
+        ) {
+            return res.status(401).json({ error: 'A verified Google account is required' });
+        }
+
+        const email = googleUser.email.trim().toLowerCase();
+        const { data: student, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+
+        if (error) {
+            return res.status(503).json({ error: authenticationServiceError(error, 'studentGoogleLogin query error') });
+        }
+        if (!student) {
+            return res.status(403).json({
+                error: 'No existing student account matches this Google email. Sign in with your registered email or contact the facilities office.',
+            });
+        }
+
+        const token = signToken({ user_id: student.user_id, role: 'student' }, true);
+        return res.json({
+            message: 'Login successful',
+            token,
+            user: publicStudent(student),
+        });
+    } catch (err) {
+        console.error('studentGoogleLogin error:', err);
+        return res.status(500).json({ error: 'Google sign-in failed. Please try again.' });
+    }
+};
+
 export const studentMe = async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -153,9 +220,12 @@ export const studentMe = async (req: Request, res: Response) => {
         .from('users')
         .select('*')
         .eq('user_id', req.user.id)
-        .single();
+        .maybeSingle();
 
-    if (error || !data) return res.status(404).json({ error: 'Student not found' });
+    if (error) {
+        return res.status(503).json({ error: authenticationServiceError(error, 'studentMe query error') });
+    }
+    if (!data) return res.status(404).json({ error: 'Student not found' });
     return res.json({ user: publicStudent(data) });
 };
 

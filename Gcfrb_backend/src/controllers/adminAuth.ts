@@ -2,10 +2,17 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabase } from '../config/supabase';
+import { JWT_SECRET } from '../config/jwt';
 
-const JWT_SECRET = process.env.JWT_SECRET as string;
 const ACCESS_TTL = '8h';
 const REMEMBER_TTL = '30d';
+
+function authenticationServiceError(error: { message?: string }, context: string) {
+    console.error(`${context}:`, error);
+    return error.message === 'Invalid API key'
+        ? 'Supabase rejected the backend API key. Check SUPABASE_SERVICE_KEY in Gcfrb_backend/.env.'
+        : 'Unable to authenticate right now';
+}
 
 function publicAdmin(row: any) {
     return {
@@ -24,7 +31,9 @@ function signToken(payload: Record<string, unknown>, remember: boolean) {
 
 export const adminLogin = async (req: Request, res: Response) => {
     try {
-        const { email, password, remember = false } = req.body;
+        const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        const password = typeof req.body?.password === 'string' ? req.body.password : '';
+        const remember = req.body?.remember === true;
 
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
@@ -35,9 +44,13 @@ export const adminLogin = async (req: Request, res: Response) => {
             .select('*')
             .eq('email', email)
             .eq('is_active', true)
-            .single();
+            .maybeSingle();
 
-        if (error || !data || !data.password_hash) {
+        if (error) {
+            return res.status(503).json({ error: authenticationServiceError(error, 'adminLogin query error') });
+        }
+
+        if (!data || !data.password_hash) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -48,7 +61,7 @@ export const adminLogin = async (req: Request, res: Response) => {
 
         const token = signToken(
             { admin_id: data.admin_id, role: data.role ?? 'admin' },
-            Boolean(remember)
+            remember
         );
 
         return res.json({ message: 'Login successful', token, admin: publicAdmin(data) });
@@ -65,9 +78,12 @@ export const adminMe = async (req: Request, res: Response) => {
         .from('admins')
         .select('*')
         .eq('admin_id', req.user.id)
-        .single();
+        .maybeSingle();
 
-    if (error || !data) return res.status(404).json({ error: 'Admin not found' });
+    if (error) {
+        return res.status(503).json({ error: authenticationServiceError(error, 'adminMe query error') });
+    }
+    if (!data) return res.status(404).json({ error: 'Admin not found' });
     return res.json({ admin: publicAdmin(data) });
 };
 

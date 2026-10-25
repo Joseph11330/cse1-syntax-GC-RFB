@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { isAxiosError } from 'axios'
+import { getSupabaseClient } from '../lib/supabase'
 import {
   ArrowLeft, ArrowRight, Building2, CalendarCheck, CalendarClock, CalendarPlus, Check, CheckCircle2, ChevronDown, ChevronRight,
   ClipboardList, Clock, CreditCard, DoorOpen, Download, Eye, EyeOff, FlaskConical, Hourglass, Inbox, Info, LayoutDashboard,
@@ -532,6 +533,7 @@ function LoginPage() {
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   if (hasStudentToken()) return <Navigate to="/dashboard" replace />
 
   const submit = async (e) => {
@@ -555,6 +557,28 @@ function LoginPage() {
       setError((isAxiosError(err) && err.response?.data?.error) || err.message || 'Unable to sign in. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const signInWithGoogle = async () => {
+    setError('')
+    if (USE_MOCK) {
+      setError('Google sign-in requires VITE_USE_MOCK=false.')
+      return
+    }
+    setGoogleLoading(true)
+    try {
+      const supabase = getSupabaseClient()
+      sessionStorage.setItem('gc_student_oauth_remember', String(remember))
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      })
+      if (oauthError) throw oauthError
+    } catch (err) {
+      sessionStorage.removeItem('gc_student_oauth_remember')
+      setError(err.message || 'Could not start Google sign-in. Please try again.')
+      setGoogleLoading(false)
     }
   }
 
@@ -621,14 +645,74 @@ function LoginPage() {
 
           <div className="my-6 flex items-center gap-3 text-[11px] text-slate-400"><span className="h-px flex-1 bg-slate-200" />or continue with<span className="h-px flex-1 bg-slate-200" /></div>
           <div className="grid grid-cols-2 gap-4">
-            {[['Google', GoogleG], ['Microsoft', MicrosoftLogo]].map(([p, Logo]) => (
-              <button key={p} type="button" onClick={() => setError(`${p} sign-in is coming soon.`)} className={`${GHOST} !py-2.5`}><Logo />{p}</button>
-            ))}
+            <button type="button" onClick={signInWithGoogle} disabled={googleLoading}
+              className={`${GHOST} !py-2.5 disabled:opacity-60`}><GoogleG />{googleLoading ? 'Connecting…' : 'Google'}</button>
+            <button type="button" onClick={() => setError('Microsoft sign-in is coming soon.')} className={`${GHOST} !py-2.5`}><MicrosoftLogo />Microsoft</button>
           </div>
           {USE_MOCK && <p className="mt-6 text-center text-[11px] text-slate-400">Dev mode: any email + 4 character password works.</p>}
         </div>
       </main>
     </div>
+  )
+}
+
+function GoogleAuthCallback() {
+  const nav = useNavigate()
+  const started = useRef(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (started.current) return undefined
+    started.current = true
+    let active = true
+
+    const completeSignIn = async () => {
+      try {
+        const supabase = getSupabaseClient()
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!session?.access_token) throw new Error('Google sign-in did not complete. Please try again.')
+
+        const { data } = await api.post('/api/student/google-login', {
+          access_token: session.access_token,
+        })
+        if (!active) return
+
+        const remember = sessionStorage.getItem('gc_student_oauth_remember') !== 'false'
+        sessionStorage.removeItem('gc_student_oauth_remember')
+        ;[localStorage, sessionStorage].forEach((storage) => storage.removeItem(TOKEN_KEY))
+        ;(remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, data.token)
+        localStorage.setItem(USER_KEY, JSON.stringify(data.user))
+        const { error: signOutError } = await supabase.auth.signOut()
+        if (signOutError) console.error('Could not clear temporary Google session:', signOutError.message)
+        nav('/dashboard', { replace: true })
+      } catch (authError) {
+        if (!active) return
+        sessionStorage.removeItem('gc_student_oauth_remember')
+        setError((isAxiosError(authError) && authError.response?.data?.error) || authError.message || 'Google sign-in failed. Please try again.')
+      }
+    }
+
+    completeSignIn()
+    return () => { active = false }
+  }, [nav])
+
+  return (
+    <main className="grid min-h-dvh place-items-center bg-white px-6">
+      <div className="w-full max-w-md text-center">
+        {error ? (
+          <>
+            <p role="alert" className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-600">{error}</p>
+            <Link to="/login" className="mt-5 inline-block text-sm font-semibold text-gc-800 hover:underline">Return to sign in</Link>
+          </>
+        ) : (
+          <>
+            <div className="mx-auto size-8 animate-spin rounded-full border-4 border-gc-100 border-t-gc-600" role="status" aria-label="Signing in" />
+            <p className="mt-4 text-sm text-slate-600">Completing Google sign-in…</p>
+          </>
+        )}
+      </div>
+    </main>
   )
 }
 
@@ -645,7 +729,44 @@ function PortalShell() {
   const [open, setOpen] = useState(false)
   const [about, setAbout] = useState(false)
   const [confirmOut, setConfirmOut] = useState(false)
+  const [sessionStatus, setSessionStatus] = useState(() => USE_MOCK ? 'ready' : hasStudentToken() ? 'checking' : 'unauthenticated')
+  const [sessionError, setSessionError] = useState('')
+  const [sessionAttempt, setSessionAttempt] = useState(0)
+
+  useEffect(() => {
+    if (USE_MOCK) return
+    if (!hasStudentToken()) return
+
+    let active = true
+    api.get('/api/student/me', authCfg()).then(({ data }) => {
+      if (!active) return
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user))
+      setSessionStatus('ready')
+    }).catch((error) => {
+      if (!active) return
+      if (isAxiosError(error) && [401, 403, 404].includes(error.response?.status)) {
+        clearStudent()
+        setSessionStatus('unauthenticated')
+        return
+      }
+      setSessionError((isAxiosError(error) && error.response?.data?.error) || 'Unable to connect to the booking service.')
+      setSessionStatus('error')
+    })
+
+    return () => { active = false }
+  }, [sessionAttempt])
+
   if (!hasStudentToken()) return <Navigate to="/login" replace />
+  if (sessionStatus === 'checking') {
+    return <div className="grid min-h-dvh place-items-center bg-white"><div className="size-8 animate-spin rounded-full border-4 border-gc-100 border-t-gc-600" role="status" aria-label="Checking session" /></div>
+  }
+  if (sessionStatus === 'error') {
+    return <div className="grid min-h-dvh place-items-center bg-white p-6"><div className="max-w-md text-center">
+      <p className="font-semibold text-slate-900">Could not load your student pages</p>
+      <p role="alert" className="mt-2 text-sm text-slate-600">{sessionError}</p>
+      <button className="mt-4 rounded-full bg-gc-900 px-5 py-2 text-sm font-semibold text-white" onClick={() => { setSessionError(''); setSessionStatus('checking'); setSessionAttempt((n) => n + 1) }}>Retry</button>
+    </div></div>
+  }
 
   const logout = () => { clearStudent(); nav('/login') }
   const link = ({ isActive }) =>
@@ -1491,6 +1612,7 @@ export default function BookerApp() {
     <Routes>
       <Route index element={<LandingPage />} />
       <Route path="login" element={<LoginPage />} />
+      <Route path="auth/callback" element={<GoogleAuthCallback />} />
       <Route element={<PortalShell />}>
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="book" element={<BookPage />} />

@@ -65,6 +65,7 @@ const bookingStore = createStore([
   mk(10, 'Maria Cruz', 'Supreme Student Government', 'AVR Room 1', 4, '10:00', '12:00', 'Leadership Seminar', 'Pending', {
     speaker: 'Atty. Dela Peña', description: 'Leadership seminar for all org presidents.', equipment: 'Projector, microphones', guests: 45 }),
 ])
+const dashboardStore = createStore(null)
 
 const mkF = (id, name, code, location, type, capacity, status, amenities = [], overview = '') =>
   ({ id, name, code, location, type, capacity, rate: 0, status, amenities, overview })
@@ -84,6 +85,7 @@ const facilityStore = createStore([
 
 const useBookings = () => useSyncExternalStore(bookingStore.sub, bookingStore.get)
 const useFacilities = () => useSyncExternalStore(facilityStore.sub, facilityStore.get)
+const useDashboardSummary = () => useSyncExternalStore(dashboardStore.sub, dashboardStore.get)
 
 const nextId = (list) => list.reduce((m, x) => Math.max(m, x.id), 0) + 1
 const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
@@ -94,9 +96,9 @@ const findConflict = (b, ignoreId) =>
       toMin(b.start) < toMin(x.end) && toMin(x.start) < toMin(b.end),
   )
 const setBookingStatus = (id, status) =>
-  bookingStore.set((l) => l.map((b) => (b.id === Number(id) ? { ...b, status } : b)))
+  bookingStore.set((l) => l.map((b) => (String(b.id) === String(id) ? { ...b, status } : b)))
 const acceptBooking = (id) => {
-  const target = bookingStore.get().find((b) => b.id === Number(id))
+  const target = bookingStore.get().find((b) => String(b.id) === String(id))
   const conflict = target && findConflict(target, target.id)
   if (conflict) return { ok: false, conflict }
   setBookingStatus(id, 'Confirmed')
@@ -108,11 +110,11 @@ const addFacility = (f) => facilityStore.set((l) => [...l, { id: nextId(l), stat
 const updateFacility = (id, patch) => facilityStore.set((l) => l.map((f) => (f.id === Number(id) ? { ...f, ...patch } : f)))
 const removeFacility = (id) => facilityStore.set((l) => l.filter((f) => f.id !== Number(id)))
 
-// Mock report numbers (replace with GET /api/admin/reports once the endpoint exists)
+// Used only when explicitly running the admin panel in mock mode.
 const monday = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d })()
 const sunday = (() => { const d = new Date(monday); d.setDate(d.getDate() + 6); return d })()
 const longDate = (d, y = false) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(y && { year: 'numeric' }) })
-const REPORT = {
+const MOCK_REPORT = {
   title: 'Booking Report',
   range: `${longDate(monday)} - ${longDate(sunday, true)}`,
   week: [['MON', 14], ['TUE', 18], ['WED', 9], ['THU', 26], ['FRI', 16], ['SAT', 7], ['SUN', 3]],
@@ -467,17 +469,40 @@ function AmenitiesEditor({ value, onChange, showList = false }) {
 function useBookingActions() {
   const toast = useToast()
   const [dialog, setDialog] = useState(null)
-  const accept = (b) => {
+  const accept = async (b) => {
+    if (!USE_MOCK) {
+      try {
+        await api.patch(`/api/admin/reservations/${b.id}/approve`)
+        setBookingStatus(b.id, 'Confirmed')
+        toast(`${b.purpose} accepted`)
+      } catch (error) {
+        toast((isAxiosError(error) && error.response?.data?.error) || 'Could not approve this request.', 'error')
+      }
+      return
+    }
     const res = acceptBooking(b.id)
     if (res.ok) toast(`${b.purpose} accepted`)
     else setDialog({ type: 'conflict', b, conflict: res.conflict })
   }
   const reject = (b) => setDialog({ type: 'reject', b })
+  const confirmReject = async (b) => {
+    if (!USE_MOCK) {
+      try {
+        await api.patch(`/api/admin/reservations/${b.id}/reject`)
+      } catch (error) {
+        toast((isAxiosError(error) && error.response?.data?.error) || 'Could not reject this request.', 'error')
+        return
+      }
+    }
+    rejectBooking(b.id)
+    close()
+    toast('Request rejected', 'info')
+  }
   const close = () => setDialog(null)
   const modals = dialog && (dialog.type === 'reject' ? (
     <ConfirmModal icon={XCircle} tone="red" title="Reject this request?" confirmLabel="Yes, reject" onCancel={close}
       message={`${dialog.b.who}'s request for ${dialog.b.room} (${whenLabel(dialog.b)}) will be marked as cancelled.`}
-      onConfirm={() => { rejectBooking(dialog.b.id); close(); toast('Request rejected', 'info') }} />
+      onConfirm={() => confirmReject(dialog.b)} />
   ) : (
     <ConfirmModal icon={AlertTriangle} tone="amber" title="Schedule conflict" hideCancel confirmLabel="Got it" onCancel={close} onConfirm={close}
       message={`${dialog.b.room} is already confirmed for ${dialog.conflict.who} (${whenLabel(dialog.conflict)}). Reject this request or ask the requester to pick another time.`} />
@@ -614,10 +639,103 @@ function AdminShell() {
 }
 
 function RequireAuth() {
-  return hasToken() ? <AdminShell /> : <Navigate to="/admin/login" replace />
+  const [status, setStatus] = useState(() => USE_MOCK ? 'ready' : hasToken() ? 'checking' : 'unauthenticated')
+  const [attempt, setAttempt] = useState(0)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (USE_MOCK) return
+    if (!hasToken()) return
+
+    let active = true
+    Promise.all([
+      api.get('/api/admin/me'),
+      api.get('/api/admin/dashboard'),
+      api.get('/api/admin/bookings'),
+      api.get('/api/rooms'),
+    ]).then(([me, dashboard, bookings, rooms]) => {
+      if (!active) return
+      localStorage.setItem('gc_admin', JSON.stringify(me.data.admin))
+      dashboardStore.set(() => dashboard.data)
+      bookingStore.set(() => (bookings.data.bookings ?? []).map(bookingFromApi))
+      facilityStore.set(() => (rooms.data.rooms ?? []).map(facilityFromApi))
+      setStatus('ready')
+    }).catch((requestError) => {
+      if (!active) return
+      if (isAxiosError(requestError) && [401, 403].includes(requestError.response?.status)) {
+        clearSession()
+        setStatus('unauthenticated')
+        return
+      }
+      setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Unable to connect to the booking service.')
+      setStatus('error')
+    })
+
+    return () => { active = false }
+  }, [attempt])
+
+  if (status === 'unauthenticated') return <Navigate to="/admin/login" replace />
+  if (status === 'checking') {
+    return <div className="grid min-h-dvh place-items-center bg-white"><div className="size-8 animate-spin rounded-full border-4 border-gc-100 border-t-gc-600" role="status" aria-label="Checking session" /></div>
+  }
+  if (status === 'error') {
+    return <div className="grid min-h-dvh place-items-center bg-white p-6"><div className="max-w-md text-center">
+      <p className="font-semibold text-slate-900">Could not load your admin pages</p>
+      <p role="alert" className="mt-2 text-sm text-slate-600">{error}</p>
+      <button className="mt-4 rounded-full bg-gc-900 px-5 py-2 text-sm font-semibold text-white" onClick={() => { setError(''); setStatus('checking'); setAttempt((n) => n + 1) }}>Retry</button>
+    </div></div>
+  }
+  return <AdminShell />
 }
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+
+const bookingFromApi = (b) => ({
+  id: b.id,
+  who: b.who || b.email || 'Unknown',
+  dept: '-',
+  room: b.facility || 'Unknown',
+  date: b.date,
+  start: b.start,
+  end: b.end,
+  purpose: b.purpose || '',
+  status: ({ pending: 'Pending', approved: 'Confirmed', confirmed: 'Confirmed', completed: 'Completed', cancelled: 'Cancelled', rejected: 'Cancelled', declined: 'Cancelled' })[String(b.status).toLowerCase()] || 'Pending',
+  speaker: '-',
+  description: '',
+  equipment: 'None',
+  guests: 0,
+  remarks: 'None',
+})
+
+const facilityFromApi = (room) => ({
+  id: room.id,
+  name: room.name,
+  code: room.code || '',
+  location: [room.floor, room.building].filter(Boolean).join(' - '),
+  type: ({ Hall: 'Hall', Lab: 'Laboratory', 'Meeting room': 'Meeting Room' })[room.layout] || room.layout || 'Meeting Room',
+  capacity: room.capacity,
+  rate: 0,
+  status: room.status === 'maintenance' ? 'Under Maintenance' : room.status === 'reserved' ? 'Occupied' : 'Available',
+  amenities: room.amenities ?? [],
+  overview: room.overview ?? '',
+})
+
+const refreshAdminData = async () => {
+  const [dashboard, bookings, rooms] = await Promise.all([
+    api.get('/api/admin/dashboard'),
+    api.get('/api/admin/bookings'),
+    api.get('/api/rooms'),
+  ])
+  dashboardStore.set(() => dashboard.data)
+  bookingStore.set(() => (bookings.data.bookings ?? []).map(bookingFromApi))
+  facilityStore.set(() => (rooms.data.rooms ?? []).map(facilityFromApi))
+}
+
+const makeFacilityUnavailable = async (id) => {
+  if (USE_MOCK) return removeFacility(id)
+  await api.delete(`/api/admin/rooms/${id}`)
+  updateFacility(id, { status: 'Under Maintenance' })
+}
 
 function LoginPage() {
   const nav = useNavigate()
@@ -735,6 +853,7 @@ function StatCard({ label, value, suffix = '', icon: Icon, tint, hint }) {
 function DashboardPage() {
   const bookings = useBookings()
   const facilities = useFacilities()
+  const summary = useDashboardSummary()
   const [status, setStatus] = useState('All Status')
   const [facility, setFacility] = useState('All Facility')
   const [range, setRange] = useState({ from: '', to: '' })
@@ -782,7 +901,7 @@ function DashboardPage() {
         <StatCard label="Function halls & laboratories" value={facilities.length} icon={Building2} tint="bg-emerald-100 text-emerald-700" />
         <StatCard label="Active rooms" value={count('Available')} icon={DoorOpen} tint="bg-sky-100 text-sky-700" />
         <StatCard label="Today's bookings" value={todays.length} icon={CalendarDays} tint="bg-amber-100 text-amber-700" />
-        <StatCard label="Utilization this week" value={68} suffix="%" icon={TrendingUp} tint="bg-violet-100 text-violet-700" hint="mock" />
+        <StatCard label="Utilization this week" value={summary?.stats?.utilizationPct ?? 0} suffix="%" icon={TrendingUp} tint="bg-violet-100 text-violet-700" hint="Live" />
       </section>
 
       <Card className="overflow-hidden">
@@ -893,7 +1012,7 @@ function BookingDetailsPage() {
   const nav = useNavigate()
   const bookings = useBookings()
   const { accept, reject, modals } = useBookingActions()
-  const b = bookings.find((x) => x.id === Number(id))
+  const b = bookings.find((x) => String(x.id) === String(id))
   if (!b) return <Navigate to="/admin/bookings" replace />
   const ro = `${inputCls} cursor-default bg-slate-50/60`
   const view = (v) => <input readOnly value={v} className={ro} />
@@ -947,10 +1066,11 @@ function NewBookingPage() {
   const facilities = useFacilities()
   const [f, setF] = useState(BLANK_BOOKING)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const h = (t) => <p className="col-span-2 mt-3 text-sm font-semibold text-gc-950">{t}</p>
 
-  const save = () => {
+  const save = async () => {
     const missing = ['room', 'date', 'start', 'end', 'who', 'purpose'].find((k) => !f[k].trim())
     if (missing) return setError('Please fill in facility, date, time, requester and title.')
     if (f.end <= f.start) return setError('End time must be later than the start time.')
@@ -958,11 +1078,35 @@ function NewBookingPage() {
     if (fac?.status === 'Under Maintenance') return setError(`${f.room} is under maintenance.`)
     if (fac && Number(f.guests) > fac.capacity) return setError(`${f.room} only fits ${fac.capacity} people.`)
     const draft = { ...f, guests: Number(f.guests) || 0, who: f.who.trim(), purpose: f.purpose.trim() }
-    const clash = findConflict(draft)
-    if (clash) return setError(`Conflict: ${f.room} is already confirmed for ${clash.who} (${whenLabel(clash)}).`)
-    addBooking({ ...draft, dept: f.dept.trim() || '-', speaker: f.speaker.trim() || '-', equipment: f.equipment.trim() || 'None', remarks: f.remarks.trim() || 'None' })
-    toast('Booking created')
-    nav('/admin/bookings')
+    if (USE_MOCK) {
+      const clash = findConflict(draft)
+      if (clash) return setError(`Conflict: ${f.room} is already confirmed for ${clash.who} (${whenLabel(clash)}).`)
+      addBooking({ ...draft, dept: f.dept.trim() || '-', speaker: f.speaker.trim() || '-', equipment: f.equipment.trim() || 'None', remarks: f.remarks.trim() || 'None' })
+      toast('Booking created')
+      nav('/admin/bookings')
+      return
+    }
+
+    setError('')
+    setSaving(true)
+    try {
+      await api.post('/api/admin/bookings', {
+        room_id: fac?.id,
+        date: f.date,
+        start_time: f.start,
+        end_time: f.end,
+        requester: draft.who,
+        purpose: draft.purpose,
+        attendees: draft.guests,
+      })
+      await refreshAdminData()
+      toast('Booking created; only the fields supported by the current database were saved.', 'info')
+      nav('/admin/bookings')
+    } catch (requestError) {
+      setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not create booking.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -1000,7 +1144,7 @@ function NewBookingPage() {
       <hr className="mt-6 border-slate-100" />
       <div className="mt-5 flex justify-end gap-3">
         <Button variant="soft" onClick={() => nav(-1)}>Cancel</Button>
-        <Button className="px-8" onClick={save}>Create booking</Button>
+        <Button className="px-8" onClick={save} disabled={saving}>{saving ? 'Creating…' : 'Create booking'}</Button>
       </div>
     </Card>
   )
@@ -1015,13 +1159,45 @@ function AddFacilityForm({ onClose }) {
   const [f, setF] = useState(EMPTY_FACILITY)
   const [amenities, setAmenities] = useState([])
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
-  const submit = () => {
+  const submit = async () => {
     if (!f.name.trim() || !f.code.trim()) return setError('Facility name and room code are required.')
     if (facilities.some((x) => x.code.toLowerCase() === f.code.trim().toLowerCase())) return setError(`Room code ${f.code.trim()} already exists.`)
-    addFacility({ name: f.name.trim(), code: f.code.trim(), location: f.location.trim() || '-', type: f.type, amenities, capacity: Number(f.capacity) || 0, rate: Number(f.rate) || 0 })
-    toast(`${f.name.trim()} added`)
-    onClose()
+    const facility = {
+      name: f.name.trim(),
+      code: f.code.trim(),
+      location: f.location.trim() || '-',
+      type: f.type,
+      amenities,
+      capacity: Number(f.capacity) || 0,
+      rate: Number(f.rate) || 0,
+    }
+    if (USE_MOCK) {
+      addFacility(facility)
+      toast(`${facility.name} added`)
+      onClose()
+      return
+    }
+
+    setError('')
+    setSaving(true)
+    try {
+      await api.post('/api/admin/rooms', {
+        name: facility.name,
+        code: facility.code,
+        location: facility.location,
+        type: facility.type,
+        capacity: facility.capacity,
+      })
+      await refreshAdminData()
+      toast('Facility added; amenities and hourly rate are not stored in the current database.', 'info')
+      onClose()
+    } catch (requestError) {
+      setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not add facility.')
+    } finally {
+      setSaving(false)
+    }
   }
   return (
     <Card className="anim-fade-up relative p-6">
@@ -1040,7 +1216,7 @@ function AddFacilityForm({ onClose }) {
         <Field label="Included amenities" className="sm:col-span-2 lg:col-span-3"><AmenitiesEditor value={amenities} onChange={setAmenities} /></Field>
       </div>
       {error && <p role="alert" className="mt-4 text-xs font-medium text-rose-600">{error}</p>}
-      <div className="mt-5 flex justify-end"><Button onClick={submit}><Plus size={14} /> Add facility</Button></div>
+      <div className="mt-5 flex justify-end"><Button onClick={submit} disabled={saving}><Plus size={14} /> {saving ? 'Adding…' : 'Add facility'}</Button></div>
     </Card>
   )
 }
@@ -1055,6 +1231,15 @@ function FacilitiesPage() {
   const formRef = useRef(null)
   const setAdding = (on) => setParams(on ? { add: '1' } : {}, { replace: true })
   useEffect(() => { if (adding) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [adding])
+  const confirmRemove = async () => {
+    try {
+      await makeFacilityUnavailable(removing.id)
+      toast('Facility is no longer bookable; its record is kept for booking history.', 'info')
+      setRemoving(null)
+    } catch (requestError) {
+      toast((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not make this facility unavailable.', 'error')
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -1100,7 +1285,7 @@ function FacilitiesPage() {
       {removing && (
         <ConfirmModal icon={Trash2} tone="red" title={`Remove ${removing.name}?`} confirmLabel="Yes, remove" onCancel={() => setRemoving(null)}
           message="This space will no longer be bookable. Existing bookings keep their record."
-          onConfirm={() => { removeFacility(removing.id); toast(`${removing.name} removed`, 'info'); setRemoving(null) }} />
+          onConfirm={confirmRemove} />
       )}
     </div>
   )
@@ -1121,12 +1306,44 @@ function FacilityDetailsPage() {
   const original = facilities.find((x) => x.id === Number(id))
   const [f, setF] = useState(() => (original ? { ...original } : null))
   const [confirm, setConfirm] = useState(false)
+  const [saving, setSaving] = useState(false)
   if (!f) return <Navigate to="/admin/facilities" replace />
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
-  const save = () => {
-    updateFacility(id, { ...f, capacity: Number(f.capacity) || 0, rate: Number(f.rate) || 0 })
-    toast('Changes saved')
-    nav('/admin/facilities')
+  const save = async () => {
+    if (USE_MOCK) {
+      updateFacility(id, { ...f, capacity: Number(f.capacity) || 0, rate: Number(f.rate) || 0 })
+      toast('Changes saved')
+      nav('/admin/facilities')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await api.patch(`/api/admin/rooms/${id}`, {
+        name: f.name,
+        code: f.code,
+        location: f.location,
+        type: f.type,
+        capacity: Number(f.capacity) || 0,
+        status: f.status,
+      })
+      await refreshAdminData()
+      toast('Facility updated; amenities, overview and hourly rate are not stored in the current database.', 'info')
+      nav('/admin/facilities')
+    } catch (requestError) {
+      toast((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not save facility changes.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const confirmRemove = async () => {
+    try {
+      await makeFacilityUnavailable(id)
+      toast('Facility is no longer bookable; its record is kept for booking history.', 'info')
+      nav('/admin/facilities')
+    } catch (requestError) {
+      toast((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not make this facility unavailable.', 'error')
+    }
   }
   return (
     <Card className="mx-auto max-w-3xl p-6 sm:p-8">
@@ -1162,14 +1379,14 @@ function FacilityDetailsPage() {
         <Button variant="danger" onClick={() => setConfirm(true)}><Trash2 size={13} /> Remove facility</Button>
         <div className="flex gap-3">
           <Button variant="soft" onClick={() => nav('/admin/facilities')}>Back</Button>
-          <Button className="px-7" onClick={save}>Save changes</Button>
+          <Button className="px-7" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
         </div>
       </div>
 
       {confirm && (
         <ConfirmModal icon={Trash2} tone="red" title={`Remove ${f.name}?`} confirmLabel="Yes, remove" onCancel={() => setConfirm(false)}
           message="This space will no longer be bookable. Existing bookings keep their record."
-          onConfirm={() => { removeFacility(id); toast(`${f.name} removed`, 'info'); nav('/admin/facilities') }} />
+          onConfirm={confirmRemove} />
       )}
     </Card>
   )
@@ -1179,11 +1396,37 @@ function FacilityDetailsPage() {
 function ReportsPage() {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const max = Math.max(...REPORT.week.map(([, v]) => v))
-  const total = REPORT.week.reduce((s, [, v]) => s + v, 0)
+  const [report, setReport] = useState(() => USE_MOCK ? MOCK_REPORT : null)
+  const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    if (USE_MOCK) return
+    let active = true
+    api.get('/api/admin/reports')
+      .then(({ data }) => {
+        if (active) setReport(data)
+      })
+      .catch((requestError) => {
+        if (active) setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Unable to load report data.')
+      })
+    return () => { active = false }
+  }, [attempt])
+  const max = Math.max(1, ...(report?.week ?? []).map(([, v]) => v))
+  const total = (report?.week ?? []).reduce((s, [, v]) => s + v, 0)
   const download = async () => {
     setBusy(true)
-    try { await downloadReportPdf(REPORT) } catch { toast('Could not generate the PDF', 'error') } finally { setBusy(false) }
+    try { await downloadReportPdf(report) } catch { toast('Could not generate the PDF', 'error') } finally { setBusy(false) }
+  }
+  if (!report) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-5">
+        <PageHeader icon={BarChart3} title="Report" subtitle="Booking volume, top spaces and utilization across the building." />
+        <Card className="p-6 text-sm text-slate-600">
+          <p role="alert">{error || 'Loading report data…'}</p>
+          {error && <Button className="mt-4" onClick={() => { setError(''); setAttempt((value) => value + 1) }}>Retry</Button>}
+        </Card>
+      </div>
+    )
   }
   return (
     <div className="report-page mx-auto max-w-5xl space-y-5">
@@ -1198,8 +1441,8 @@ function ReportsPage() {
           </div>
         </div>
         <div className="text-right leading-tight">
-          <p className="text-base font-extrabold text-gc-900">{REPORT.title}</p>
-          <p className="text-[10px] text-slate-500">Period: {REPORT.range}</p>
+          <p className="text-base font-extrabold text-gc-900">{report.title}</p>
+          <p className="text-[10px] text-slate-500">Period: {report.range}</p>
           <p className="text-[10px] text-slate-500">Generated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
         </div>
       </div>
@@ -1211,7 +1454,7 @@ function ReportsPage() {
 
       <Card className="space-y-5 p-5 sm:p-6">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-4 py-2 text-[11px] font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
-          <Calendar size={13} className="text-gc-600" /> {REPORT.range}
+          <Calendar size={13} className="text-gc-600" /> {report.range}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -1221,7 +1464,7 @@ function ReportsPage() {
               <span className="text-[11px] text-slate-500"><b className="text-sm font-semibold tabular-nums text-slate-900">{total}</b> total</span>
             </div>
             <div className="mt-5 flex h-48 items-end gap-3">
-              {REPORT.week.map(([d, v], i) => (
+              {report.week.map(([d, v], i) => (
                 <div key={d} className="group flex h-full flex-1 flex-col items-center justify-end" title={`${d}: ${v} bookings`}>
                   <span className="mb-1 text-[10px] font-semibold tabular-nums text-slate-700 opacity-0 transition group-hover:opacity-100">{v}</span>
                   <div className={`anim-grow-y w-full origin-bottom rounded-t-lg transition group-hover:brightness-110 ${i >= 5 ? 'bg-gradient-to-t from-gold-400 to-amber-300' : 'bg-gradient-to-t from-gc-900 to-gc-600'}`}
@@ -1235,7 +1478,7 @@ function ReportsPage() {
           <Card className="p-5">
             <h2 className="text-[11px] font-bold uppercase tracking-wider text-gc-900">Utilization by facility type</h2>
             <div className="mt-6 space-y-6">
-              {REPORT.utilization.map(([l, p], i) => (
+              {report.utilization.map(([l, p], i) => (
                 <div key={l} className="flex items-center gap-3 text-[11px]">
                   <span className="w-24 shrink-0 text-slate-600">{l}</span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
@@ -1260,7 +1503,7 @@ function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {REPORT.top.map(([name, req, rate, dur]) => (
+                {report.top.map(([name, req, rate, dur]) => (
                   <tr key={name} className="border-t border-slate-100 odd:bg-gc-50/50">
                     <td className="px-5 py-3.5 font-medium text-slate-900">{name}</td>
                     <td className="px-5 py-3.5 text-center tabular-nums">{req}</td>

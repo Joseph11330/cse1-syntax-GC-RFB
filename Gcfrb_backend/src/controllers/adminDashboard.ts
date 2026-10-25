@@ -145,6 +145,113 @@ export const getAdminDashboard = async (_req: Request, res: Response) => {
     }
 };
 
+export const getAdminReports = async (_req: Request, res: Response) => {
+    try {
+        const today = manilaDate(new Date());
+        const [monday, sunday] = weekRange(today);
+        const monthStart = `${today.slice(0, 7)}-01`;
+        const [bookingsRes, roomsRes] = await Promise.all([
+            supabase
+                .from('bookings')
+                .select('room_id, booking_date, start_time, end_time, booking_status, rooms ( room_name, room_type )')
+                .gte('booking_date', monthStart)
+                .lte('booking_date', sunday),
+            supabase.from('rooms').select('room_id, room_name, room_type'),
+        ]);
+
+        const failed = bookingsRes.error ?? roomsRes.error;
+        if (failed) {
+            console.error('getAdminReports query error:', failed);
+            return res.status(500).json({ error: 'Failed to load reports' });
+        }
+
+        const bookings = (bookingsRes.data ?? []) as any[];
+        const rooms = (roomsRes.data ?? []) as any[];
+        const weekBookings = bookings.filter((booking) => booking.booking_date >= monday && booking.booking_date <= sunday);
+        const countsByDate = new Map<string, number>();
+        const dayLabels = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        const week: [string, number][] = Array.from({ length: 7 }, (_, offset) => {
+            const date = new Date(`${monday}T00:00:00Z`);
+            date.setUTCDate(date.getUTCDate() + offset);
+            return [dayLabels[date.getUTCDay()], 0];
+        });
+        for (const booking of weekBookings) {
+            countsByDate.set(booking.booking_date, (countsByDate.get(booking.booking_date) ?? 0) + 1);
+        }
+        for (let i = 0; i < week.length; i++) {
+            const date = new Date(`${monday}T00:00:00Z`);
+            date.setUTCDate(date.getUTCDate() + i);
+            week[i][1] = countsByDate.get(date.toISOString().slice(0, 10)) ?? 0;
+        }
+
+        const categories = [
+            { label: 'Meeting rooms', matches: (type: string) => /meeting|conference|avr|seminar/i.test(type) },
+            { label: 'Halls', matches: (type: string) => /hall|gym|auditorium|function/i.test(type) },
+            { label: 'Labs', matches: (type: string) => /lab/i.test(type) },
+        ];
+        const utilization = categories.map(({ label, matches }) => {
+            const categoryRooms = rooms.filter((room) => matches(String(room.room_type ?? '')));
+            const roomIds = new Set(categoryRooms.map((room) => room.room_id));
+            let hours = 0;
+            for (const booking of weekBookings) {
+                if (!roomIds.has(booking.room_id) || !APPROVED_STATUSES.includes(norm(booking.booking_status))) continue;
+                const start = parseClock(booking.start_time);
+                const end = parseClock(booking.end_time);
+                if (start !== null && end !== null && end > start) hours += (end - start) / 60;
+            }
+            const capacity = categoryRooms.length * HOURS_PER_DAY * DAYS_PER_WEEK;
+            return [label, capacity ? Math.min(100, Math.round((hours / capacity) * 100)) : 0] as [string, number];
+        });
+
+        const byRoom = new Map<number, any[]>();
+        for (const booking of bookings) {
+            const group = byRoom.get(booking.room_id) ?? [];
+            group.push(booking);
+            byRoom.set(booking.room_id, group);
+        }
+        const top = Array.from(byRoom.values())
+            .map((rows) => {
+                const first = rows[0];
+                const approved = rows.filter((row) => APPROVED_STATUSES.includes(norm(row.booking_status))).length;
+                const durations = rows
+                    .map((row) => {
+                        const start = parseClock(row.start_time);
+                        const end = parseClock(row.end_time);
+                        return start !== null && end !== null && end > start ? (end - start) / 60 : null;
+                    })
+                    .filter((duration): duration is number => duration !== null);
+                const average = durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : 0;
+                return [
+                    first.rooms?.room_name ?? 'Unknown room',
+                    rows.length,
+                    `${Math.round((approved / rows.length) * 100)}%`,
+                    `${average.toFixed(2)} hrs`,
+                ] as [string, number, string, string];
+            })
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+        const dateLabel = (date: string, includeYear = false) =>
+            new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'short',
+                day: 'numeric',
+                ...(includeYear ? { year: 'numeric' } : {}),
+            });
+
+        return res.json({
+            title: 'Booking Report',
+            range: `${dateLabel(monday)} - ${dateLabel(sunday, true)}`,
+            week,
+            utilization,
+            top,
+        });
+    } catch (err) {
+        console.error('getAdminReports error:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
 export const listAllBookings = async (req: Request, res: Response) => {
     try {
         let query = supabase.from('bookings').select(ADMIN_BOOKING_SELECT).limit(500);
