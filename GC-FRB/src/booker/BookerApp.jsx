@@ -4,9 +4,9 @@ import { isAxiosError } from 'axios'
 import { getSupabaseClient } from '../lib/supabase'
 import {
   ArrowLeft, ArrowRight, Building2, CalendarCheck, CalendarClock, CalendarPlus, Check, CheckCircle2, ChevronDown, ChevronRight,
-  ClipboardList, Clock, CreditCard, DoorOpen, Download, Eye, EyeOff, FlaskConical, Hourglass, Inbox, Info, LayoutDashboard,
+  ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FlaskConical, Hourglass, Inbox, Info, LayoutDashboard,
   LayoutGrid, Lock, LogOut, Mail, MapPin, Menu, Mic, MousePointerClick, Plug, Plus, Presentation, Projector, QrCode, Search,
-  ShieldCheck, Smartphone, Sparkles, Speaker, Tv, Users, Video, Wifi, Wrench, X, XCircle, Zap,
+  ShieldCheck, Sparkles, Speaker, Tv, Users, Video, Wifi, Wrench, X, XCircle, Zap,
 } from 'lucide-react'
 import api from '../api'
 import ConfirmModal from '../components/ConfirmModal'
@@ -364,7 +364,6 @@ const fmtClock = (t) => `${clock12(t)} ${meridiem(t)}`
 const slotLabel = (s, e) => (meridiem(s) === meridiem(e) ? `${clock12(s)} - ${clock12(e)} ${meridiem(e)}` : `${fmtClock(s)} - ${fmtClock(e)}`)
 const fmtDay = (iso, year = true) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(year && { year: 'numeric' }) })
 const fmtLong = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-const peso = (n) => `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const titleCase = (s = '') => s.replace(/\b\w/g, (c) => c.toUpperCase())
 const fromIso = (iso) => { const d = new Date(iso); return { date: toISO(d), time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}` } }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
@@ -431,11 +430,8 @@ const DEFAULT_RULES = [
   "Exceeding your booked time is subject to the next reservation's priority.",
 ]
 const ADDON_ICON = { 'Presentation clicker': MousePointerClick, 'Extension cords': Plug, 'Extra microphones': Mic }
-const ADDONS = [
-  { name: 'Presentation clicker', price: 150 },
-  { name: 'Extension cords', price: 100 },
-  { name: 'Extra microphones', price: 250 },
-]
+// Everything on this site is free, so add-ons are just names (no prices).
+const ADDONS = [{ name: 'Presentation clicker' }, { name: 'Extension cords' }, { name: 'Extra microphones' }]
 
 /* ---- shared look ---- */
 const CARD = 'rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,40,15,.04),0_14px_34px_-18px_rgba(15,60,20,.22)]'
@@ -980,7 +976,7 @@ function DashboardPage() {
 }
 
 /* ───────────── 8. book flow (steps 1–5) ───────────── */
-const BOOK_STEPS = ['Find a space', 'Details', 'Reservation', 'Payment', 'Confirmation']
+const BOOK_STEPS = ['Find a space', 'Details', 'Reservation', 'Review', 'Confirmation']
 const ROOM_BADGE = {
   Available: 'bg-white/95 text-gc-800', Occupied: 'bg-white/95 text-red-600', 'Under maintenance': 'bg-white/95 text-amber-700',
 }
@@ -1146,7 +1142,7 @@ function DetailsStep({ d, set, go, back }) {
           </div>
           {bad && <p role="alert" className="mt-2 text-[11px] text-red-600">End time must be after the start time.</p>}
           <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-            <span className="text-[11px] text-slate-500">Estimated cost{!bad && ` (${fmtHrs(hoursOf(d))})`}</span>
+            <span className="text-[11px] text-slate-500">Cost{!bad && ` (${fmtHrs(hoursOf(d))})`}</span>
             <span className="text-lg font-extrabold text-gc-800">FREE</span>
           </div>
           <button disabled={bad || !d.date} onClick={go} className={`${PRIMARY} mt-4 w-full`}>Proceed to reservation<ChevronRight className="size-4" /></button>
@@ -1157,7 +1153,7 @@ function DetailsStep({ d, set, go, back }) {
 }
 
 /* step 3 — reservation details */
-function ReservationStep({ d, set, go, back, addons, cost }) {
+function ReservationStep({ d, set, go, back, addons }) {
   const [tried, setTried] = useState(false)
   const errs = {
     title: !d.title.trim() && 'Give your event a title.',
@@ -1195,17 +1191,16 @@ function ReservationStep({ d, set, go, back, addons, cost }) {
           </section>
 
           <section className={`${CARD} p-5`}>
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-950"><Plus className="size-4 text-gc-600" />Add-on Services <span className="font-normal text-slate-400">(optional)</span></h2>
+            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-950"><Plus className="size-4 text-gc-600" />Add-on Services <span className="font-normal text-slate-400">(optional, free)</span></h2>
             <p className="mt-4 text-[11px] font-semibold text-slate-800">Equipment request</p>
             <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
-              {addons.map(({ name, price }) => {
+              {addons.map(({ name }) => {
                 const on = d.equipment.includes(name), Icon = ADDON_ICON[name] || Plug
                 return (
                   <label key={name} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${on ? 'border-gc-600 bg-gc-50 ring-2 ring-gc-500/15' : 'border-slate-200 hover:bg-slate-50'}`}>
                     <input type="checkbox" checked={on} onChange={() => toggle(name)} className="size-4 accent-gc-700" />
                     <span className="grid size-8 place-items-center rounded-lg bg-white text-gc-700 shadow-sm ring-1 ring-slate-200"><Icon className="size-4" /></span>
                     <span className="flex-1 text-xs font-medium text-slate-800">{name}</span>
-                    <span className="text-[11px] font-semibold text-slate-500">{peso(price)}</span>
                   </label>
                 )
               })}
@@ -1222,93 +1217,48 @@ function ReservationStep({ d, set, go, back, addons, cost }) {
             <SummaryRow k="Time" v={slotLabel(d.start, d.end)} /><SummaryRow k="Duration" v={fmtHrs(hoursOf(d))} />
           </dl>
           <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-4">
-            <span className="text-[11px] text-slate-500">Estimated total</span>
-            <span className="text-base font-extrabold text-gc-800">{cost ? peso(cost) : 'FREE'}</span>
+            <span className="text-[11px] text-slate-500">Cost</span>
+            <span className="text-base font-extrabold text-gc-800">FREE</span>
           </div>
-          <p className="mt-1 text-[10px] italic text-slate-400">*Add-ons below may carry a small fee.</p>
-          <button onClick={next} className={`${PRIMARY} mt-4 w-full`}>Proceed to payment<ChevronRight className="size-4" /></button>
+          <p className="mt-1 text-[10px] italic text-slate-400">Room use and add-ons are free of charge.</p>
+          <button onClick={next} className={`${PRIMARY} mt-4 w-full`}>Proceed to review<ChevronRight className="size-4" /></button>
         </aside>
       </div>
     </FlowFrame>
   )
 }
 
-/* step 4 — review & pay */
-const onlyDigits = (s) => s.replace(/\D/g, '')
-function PaymentStep({ d, set, back, cost, addons, submitting, submitError, onPay }) {
+/* step 4 — review & submit (no payment: everything is free) */
+function ReviewStep({ d, set, back, submitting, submitError, onSubmit }) {
   const [tried, setTried] = useState(false)
-  const pays = cost > 0
-  const errs = {
-    agree: !d.agree && 'Please accept the Facility Use Terms & Conditions.',
-    gcash: pays && d.method === 'gcash' && !/^09\d{9}$/.test(onlyDigits(d.gcash)) && 'Enter a valid GCash number (09XX XXX XXXX).',
-    card: pays && d.method === 'card' && onlyDigits(d.card).length !== 16 && 'Enter the 16-digit card number.',
-    expiry: pays && d.method === 'card' && !/^(0[1-9]|1[0-2])\/\d{2}$/.test(d.expiry) && 'Use MM/YY.',
-    cvv: pays && d.method === 'card' && !/^\d{3,4}$/.test(d.cvv) && '3–4 digits.',
-  }
-  const invalid = Object.values(errs).some(Boolean)
-  const err = (k) => tried && errs[k] && <span className="mt-1 block text-[10px] font-medium text-red-600">{errs[k]}</span>
-  const pay = () => { setTried(true); if (!invalid) onPay() }
-  const chosen = d.equipment.length ? d.equipment.join(', ') : 'None'
-  const methods = [{ id: 'card', label: 'Credit / Debit', Icon: CreditCard }, { id: 'gcash', label: 'GCash / e-wallet', Icon: Smartphone }]
+  const agreeErr = tried && !d.agree && 'Please accept the Facility Use Terms & Conditions.'
+  const submit = () => { setTried(true); if (d.agree) onSubmit() }
   return (
-    <FlowFrame step={4} narrow title="Review & pay" sub="Add-on equipment carries a small fee. Room use itself stays free for accredited orgs.">
+    <FlowFrame step={4} narrow title="Review & submit" sub="Check your request before sending it. Room use and equipment are free of charge.">
       <section className={`${CARD} px-5`}>
         <h2 className="py-4 text-sm font-bold text-slate-950">Booking Summary</h2>
         <dl className="divide-y divide-slate-100 border-t border-slate-100">
           <SummaryRow k="Facility" v={`${d.room.name} - ${titleCase(d.room.floor)}`} />
           <SummaryRow k="Schedule" v={`${fmtDay(d.date)}, ${slotLabel(d.start, d.end)}`} />
-          <SummaryRow k="Add - ons" v={chosen} />
-          <SummaryRow k="Subtotal" v={peso(0)} />
-          <SummaryRow k="Add - ons costs" v={peso(cost)} />
-          <SummaryRow k="Total amount" v={peso(cost)} strong />
+          <SummaryRow k="Event" v={d.title} />
+          <SummaryRow k="Add-ons" v={d.equipment.length ? d.equipment.join(', ') : 'None'} />
+          <SummaryRow k="Cost" v="FREE" strong />
         </dl>
       </section>
 
       <section className={`${CARD} mt-6 p-5`}>
-        <h2 className="text-sm font-bold text-slate-950">Payment Method</h2>
-        <RequiredNote className="mt-1" />
-        <div role="radiogroup" aria-label="Payment method" className="mt-4 grid grid-cols-2 gap-4">
-          {methods.map(({ id, label, Icon }) => (
-            <button key={id} role="radio" aria-checked={d.method === id} onClick={() => set({ method: id })}
-              className={`flex h-24 flex-col items-center justify-center gap-2 rounded-xl border-2 text-xs font-semibold transition ${d.method === id ? 'border-gc-900 bg-gc-50 text-gc-900 shadow-md' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-              <Icon className="size-6" />{label}
-            </button>
-          ))}
-        </div>
-
-        {d.method === 'gcash' ? (
-          <label className={`${LABEL} mt-5`}>GCash mobile number<Req />
-            <input inputMode="numeric" value={d.gcash} onChange={(e) => set({ gcash: e.target.value })} placeholder="09XX XXX XXXX" className={INPUT} />{err('gcash')}
-          </label>
-        ) : (
-          <div className="mt-5 space-y-4">
-            <label className={LABEL}>Card number<Req />
-              <input inputMode="numeric" autoComplete="cc-number" value={d.card} onChange={(e) => set({ card: onlyDigits(e.target.value).slice(0, 16).replace(/(.{4})/g, '$1 ').trim() })} placeholder="4242 4242 4242 4242" className={INPUT} />{err('card')}
-            </label>
-            <div className="grid grid-cols-2 gap-4">
-              <label className={LABEL}>Expiry date<Req />
-                <input inputMode="numeric" autoComplete="cc-exp" value={d.expiry} onChange={(e) => { const v = onlyDigits(e.target.value).slice(0, 4); set({ expiry: v.length > 2 ? `${v.slice(0, 2)}/${v.slice(2)}` : v }) }} placeholder="MM/YY" className={INPUT} />{err('expiry')}
-              </label>
-              <label className={LABEL}>CVV<Req />
-                <input inputMode="numeric" autoComplete="cc-csc" type="password" value={d.cvv} onChange={(e) => set({ cvv: onlyDigits(e.target.value).slice(0, 4) })} placeholder="123" className={INPUT} />{err('cvv')}
-              </label>
-            </div>
-          </div>
-        )}
-        {!pays && <p className="mt-4 rounded-lg bg-gc-50 px-3 py-2 text-[11px] text-gc-800">No add-ons selected, so there's nothing to pay. You can confirm your request directly.</p>}
-
-        <label className="mt-5 flex items-center gap-2.5 text-[11px] text-slate-700">
+        <RequiredNote />
+        <label className="mt-3 flex items-center gap-2.5 text-[11px] text-slate-700">
           <input type="checkbox" checked={d.agree} onChange={(e) => set({ agree: e.target.checked })} className="size-4 accent-gc-700" />I agree to the Facility Use Terms &amp; Conditions<Req />
         </label>
-        {err('agree')}
+        {agreeErr && <span role="alert" className="mt-1 block text-[10px] font-medium text-red-600">{agreeErr}</span>}
         {submitError && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3.5 py-2.5 text-xs text-red-600">{submitError}</p>}
       </section>
 
       <div className="mt-6 flex items-center justify-between">
         <BackLink onClick={back}>Back to reservation</BackLink>
-        <button disabled={submitting} onClick={pay} className={PRIMARY}>{submitting ? 'Sending…' : 'Confirm and pay'}<ChevronRight className="size-4" /></button>
+        <button disabled={submitting} onClick={submit} className={PRIMARY}>{submitting ? 'Sending…' : 'Submit request'}<ChevronRight className="size-4" /></button>
       </div>
-      <span className="sr-only">{addons.length} add-ons available</span>
     </FlowFrame>
   )
 }
@@ -1320,7 +1270,7 @@ async function downloadReceipt({ done, d, user, qr }) {
   doc.setFillColor(10, 74, 18); doc.rect(0, 0, 148, 28, 'F')
   doc.setTextColor(255); doc.setFontSize(15); doc.text('Gordon College', 12, 13); doc.setFontSize(9); doc.text('Room & Facility Booking · Booking request receipt', 12, 20)
   doc.setTextColor(30); doc.setFontSize(11); doc.text(`Reference: ${done.ref}`, 12, 40)
-  const rows = [['Facility', d.room.name], ['Date', fmtLong(d.date)], ['Time', slotLabel(d.start, d.end)], ['Purpose', d.title], ['Requested by', displayName(user) || '—'], ['Organization', d.department || '—'], ['Add-ons', d.equipment.join(', ') || 'None'], ['Total', peso(done.total)], ['Status', 'Pending approval']]
+  const rows = [['Facility', d.room.name], ['Date', fmtLong(d.date)], ['Time', slotLabel(d.start, d.end)], ['Purpose', d.title], ['Requested by', displayName(user) || '—'], ['Organization', d.department || '—'], ['Add-ons', d.equipment.join(', ') || 'None'], ['Status', 'Pending approval']]
   doc.setFontSize(9.5)
   rows.forEach(([k, v], i) => { doc.setTextColor(120); doc.text(k, 12, 52 + i * 8); doc.setTextColor(20); doc.text(String(v), 60, 52 + i * 8, { maxWidth: 76 }) })
   if (qr) doc.addImage(qr, 'PNG', 49, 128, 50, 50)
@@ -1383,14 +1333,13 @@ function BookPage() {
   const setDraft = (patch) => setD((p) => ({ ...p, ...patch }))
   const toggle = (key, v) => set({ [key]: f[key].includes(v) ? f[key].filter((x) => x !== v) : [...f[key], v] })
   const badTime = toMin(f.end) <= toMin(f.start)
-  const cost = d ? d.equipment.reduce((s, n) => s + (addons.find((a) => a.name === n)?.price || 0), 0) : 0
 
   useEffect(() => { document.getElementById('portal-main')?.scrollTo({ top: 0, behavior: 'smooth' }) }, [step])
 
-  // add-on prices from the backend (mock mode keeps the local list)
+  // add-on names from the backend (mock mode keeps the local list)
   useEffect(() => {
     if (USE_MOCK) return
-    api.get('/api/addons', authCfg()).then((r) => r.data.addons?.length && setAddons(r.data.addons.map((a) => ({ name: a.name, price: a.price })))).catch(() => {})
+    api.get('/api/addons', authCfg()).then((r) => r.data.addons?.length && setAddons(r.data.addons.map((a) => ({ name: a.name })))).catch(() => {})
   }, [])
 
   // live rooms from the backend (skipped in mock mode)
@@ -1428,7 +1377,7 @@ function BookPage() {
   [rooms, f, q])
 
   const startBooking = (room) => {
-    setD({ room, date: f.date, start: f.start, end: f.end, title: '', description: '', department: '', invitees: '', equipment: [], guests: String(Math.min(Number(f.headcount) || '', room.capacity) || ''), remarks: '', method: 'gcash', gcash: '', card: '', expiry: '', cvv: '', agree: false })
+    setD({ room, date: f.date, start: f.start, end: f.end, title: '', description: '', department: '', invitees: '', equipment: [], guests: String(Math.min(Number(f.headcount) || '', room.capacity) || ''), remarks: '', agree: false })
     setDetails(null)
     setStep(2)
   }
@@ -1442,18 +1391,16 @@ function BookPage() {
         qrPayload = `GC-BOOK|${ref}`
         bookingStore.set((l) => [{ id: Date.now(), facility: d.room.name.replace('Gordon College ', ''), date: d.date, start: d.start, end: d.end, purpose: d.title, reference: ref, status: 'Pending' }, ...l])
       } else {
-        // card details are never sent: the backend only records the method (+ GCash number)
         const { data } = await api.post('/api/reservations', {
           room_id: d.room.id, title: d.title, description: d.description, department: d.department,
           start_time: new Date(`${d.date}T${d.start}`).toISOString(), end_time: new Date(`${d.date}T${d.end}`).toISOString(),
           attendees: Number(d.guests), invitees: d.invitees || null, equipment_requested: d.equipment,
-          special_instructions: d.remarks || null, payment_method: d.method === 'gcash' ? 'gcash' : 'card',
-          gcash_number: d.method === 'gcash' ? onlyDigits(d.gcash) : null, agree_terms: d.agree,
+          special_instructions: d.remarks || null, agree_terms: d.agree,
         }, authCfg())
         ref = data.reservation.reference_no
         qrPayload = data.qr?.payload || `GC-BOOK|${ref}`
       }
-      setDone({ ref, qr: qrPayload, total: cost })
+      setDone({ ref, qr: qrPayload })
       setStep(5)
       toast('Booking request sent. Waiting for approval.')
     } catch (e) {
@@ -1476,10 +1423,10 @@ function BookPage() {
   }
 
   if (step === 2 && d) return <DetailsStep d={d} set={setDraft} go={() => setStep(3)} back={() => setStep(1)} />
-  if (step === 3 && d) return <ReservationStep d={d} set={setDraft} go={() => setStep(4)} back={() => setStep(2)} addons={addons} cost={cost} />
+  if (step === 3 && d) return <ReservationStep d={d} set={setDraft} go={() => setStep(4)} back={() => setStep(2)} addons={addons} />
   if (step === 4 && d) return (
     <>
-      <PaymentStep d={d} set={setDraft} back={() => setStep(3)} cost={cost} addons={addons} submitting={submitting} submitError={submitError} onPay={() => setAskSubmit(true)} />
+      <ReviewStep d={d} set={setDraft} back={() => setStep(3)} submitting={submitting} submitError={submitError} onSubmit={() => setAskSubmit(true)} />
       {askSubmit && (
         <ConfirmModal icon={CalendarCheck} tone="green" title="Send this booking request?" confirmLabel="Yes" cancelLabel="No" busy={submitting}
           message={`${d.room.name} on ${fmtDay(d.date)}, ${slotLabel(d.start, d.end)}.`}

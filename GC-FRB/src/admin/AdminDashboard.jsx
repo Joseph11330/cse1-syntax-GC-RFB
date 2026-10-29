@@ -15,6 +15,7 @@ import logoLogin from '../assets/logo-login.png'
 import { downloadReportPdf } from '../lib/reportPdf'
 import ConfirmModal from '../components/ConfirmModal'
 import ImageUpload from '../components/ImageUpload'
+import { ForgotPasswordPage, ResetPasswordPage } from './ForgotPassword'
 import { Req, RequiredNote } from '../components/Req'
 import { ToastProvider } from '../components/Toast'
 import { useToast } from '../components/toastContext'
@@ -732,7 +733,8 @@ function LoginPage() {
 
       <main className="flex items-center justify-center px-6 py-12">
         <form onSubmit={submit} className="anim-fade-up w-full max-w-sm">
-          <img src={logoLogin} alt="" className="mb-6 size-14 rounded-full shadow-lg shadow-gc-900/20 lg:hidden" />
+          <Link to="/" className="mb-6 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-gc-700"><ArrowLeft size={14} />Back to home</Link>
+          <img src={logoLogin} alt="" className="mb-6 block size-14 rounded-full shadow-lg shadow-gc-900/20 lg:hidden" />
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gc-600">Administrator access</p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Welcome back</h2>
           <p className="mt-1 text-sm text-slate-500">Log in to manage bookings and facilities.</p>
@@ -755,7 +757,7 @@ function LoginPage() {
             <label className="flex items-center gap-2 text-slate-600">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-3.5 accent-gc-700" /> Remember me
             </label>
-            <a href="#" className="font-semibold text-gc-700 hover:underline">Forgot password?</a>
+            <Link to="/admin/forgot-password" className="font-semibold text-gc-700 hover:underline">Forgot password?</Link>
           </div>
 
           {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600">{error}</p>}
@@ -1131,7 +1133,7 @@ function AddFacilityForm({ onClose }) {
       type: f.type,
       amenities,
       capacity: Number(f.capacity) || 0,
-      rate: Number(f.rate) || 0,
+      rate: 0,
       image: f.image,
     }
     if (USE_MOCK) {
@@ -1153,7 +1155,7 @@ function AddFacilityForm({ onClose }) {
         image_url: facility.image || undefined,
       })
       await refreshAdminData()
-      toast('Facility added; amenities and hourly rate are not stored in the current database.', 'info')
+      toast('Facility added; amenities are not stored in the current database.', 'info')
       onClose()
     } catch (requestError) {
       fail((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not add facility.')
@@ -1175,7 +1177,6 @@ function AddFacilityForm({ onClose }) {
           <select value={f.type} onChange={set('type')} className={inputCls}>{FACILITY_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
         </Field>
         <Field label="Max capacity"><input type="number" min="0" value={f.capacity} onChange={set('capacity')} className={inputCls} /></Field>
-        <Field label="Hourly rate (₱, 0 = free)"><input type="number" min="0" value={f.rate} onChange={set('rate')} className={inputCls} /></Field>
         <Field label="Included amenities" className="sm:col-span-2 lg:col-span-3"><AmenitiesEditor value={amenities} onChange={setAmenities} /></Field>
         <Field label="Photo of the room (optional)" className="sm:col-span-2 lg:col-span-3"><ImageUpload value={f.image} onChange={(image) => setF((p) => ({ ...p, image }))} onError={(m) => toast(m, 'error')} /></Field>
       </div>
@@ -1285,7 +1286,7 @@ function FacilityDetailsPage() {
   const save = async () => {
     setAsking(false)
     if (USE_MOCK) {
-      updateFacility(id, { ...f, capacity: Number(f.capacity) || 0, rate: Number(f.rate) || 0 })
+      updateFacility(id, { ...f, capacity: Number(f.capacity) || 0, rate: 0 })
       toast('Changes saved')
       nav('/admin/facilities')
       return
@@ -1303,7 +1304,7 @@ function FacilityDetailsPage() {
         image_url: f.image || null,
       })
       await refreshAdminData()
-      toast('Facility updated; amenities, overview and hourly rate are not stored in the current database.', 'info')
+      toast('Facility updated; amenities and overview are not stored in the current database.', 'info')
       nav('/admin/facilities')
     } catch (requestError) {
       toast((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not save facility changes.', 'error')
@@ -1335,7 +1336,6 @@ function FacilityDetailsPage() {
         <Field label="Type of facility">
           <select value={f.type} onChange={set('type')} className={inputCls}>{FACILITY_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
         </Field>
-        <Field label="Hourly rate (₱, 0 = free)"><input type="number" min="0" value={f.rate} onChange={set('rate')} className={inputCls} /></Field>
         <Field label="Included amenities" className="sm:col-span-2"><AmenitiesEditor showList value={f.amenities} onChange={(amenities) => setF({ ...f, amenities })} /></Field>
         <Field label="Facility overview" className="sm:col-span-2"><textarea rows={4} value={f.overview} onChange={set('overview')} className={inputCls} /></Field>
         <Field label="Photo of the room (optional)" className="sm:col-span-2"><ImageUpload value={f.image} onChange={(image) => setF((p) => ({ ...p, image }))} onError={(m) => toast(m, 'error')} /></Field>
@@ -1513,6 +1513,8 @@ export default function AdminDashboard() {
     <ToastProvider>
       <Routes>
         <Route path="login" element={<LoginPage />} />
+        <Route path="forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
