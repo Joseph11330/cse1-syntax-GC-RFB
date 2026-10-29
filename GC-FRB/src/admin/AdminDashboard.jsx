@@ -1,18 +1,23 @@
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore,
+  useEffect, useRef, useState, useSyncExternalStore,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import {
   AlertTriangle, ArrowLeft, BarChart3, Bell, Building2, CalendarCheck, CalendarDays, Calendar, Check,
-  CheckCircle2, ChevronDown, ChevronRight, DoorOpen, Download, Eye, EyeOff, HelpCircle, Info,
+  ChevronDown, ChevronRight, DoorOpen, Download, Eye, EyeOff, HelpCircle,
   LayoutDashboard, LogOut, Menu, MoreVertical, Plus, Printer, Search, Trash2, TrendingUp, X, XCircle, Inbox,
 } from 'lucide-react'
 import api from '../api'
 import logoSidebar from '../assets/logo-sidebar.png'
 import logoLogin from '../assets/logo-login.png'
 import { downloadReportPdf } from '../lib/reportPdf'
+import ConfirmModal from '../components/ConfirmModal'
+import ImageUpload from '../components/ImageUpload'
+import { Req, RequiredNote } from '../components/Req'
+import { ToastProvider } from '../components/Toast'
+import { useToast } from '../components/toastContext'
 
 /* ───────────────────────── 1. DATA STORE ───────────────────────── */
 
@@ -204,10 +209,10 @@ function Button({ variant, className, type = 'button', ...rest }) {
   return <button type={type} {...rest} className={btnCls(variant, className)} />
 }
 
-function Field({ label, className = '', children }) {
+function Field({ label, required, className = '', children }) {
   return (
     <div className={className}>
-      <span className="text-[11px] font-semibold tracking-wide text-slate-600">{label}</span>
+      <span className="text-[11px] font-semibold tracking-wide text-slate-600">{label}{required && <Req />}</span>
       <div className="mt-1.5">{children}</div>
     </div>
   )
@@ -265,82 +270,6 @@ function Avatar({ name }) {
   )
 }
 
-/* Toasts */
-const ToastCtx = createContext(() => {})
-const useToast = () => useContext(ToastCtx)
-const TOAST_ICON = { success: CheckCircle2, error: XCircle, info: Info }
-const TOAST_COLOR = { success: 'text-emerald-500', error: 'text-rose-500', info: 'text-sky-500' }
-
-function ToastProvider({ children }) {
-  const [items, setItems] = useState([])
-  const push = useCallback((message, tone = 'success') => {
-    const id = Math.random().toString(36).slice(2)
-    setItems((i) => [...i, { id, message, tone }])
-    setTimeout(() => setItems((i) => i.filter((x) => x.id !== id)), 3600)
-  }, [])
-  return (
-    <ToastCtx.Provider value={push}>
-      {children}
-      {createPortal(
-        <div aria-live="polite" className="no-print fixed bottom-5 right-5 z-[60] flex w-[min(22rem,calc(100vw-2.5rem))] flex-col gap-2">
-          {items.map(({ id, message, tone }) => {
-            const Icon = TOAST_ICON[tone]
-            return (
-              <div key={id} className="anim-toast flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-[13px] font-medium text-white shadow-2xl shadow-black/30">
-                <Icon size={18} className={TOAST_COLOR[tone]} />
-                {message}
-              </div>
-            )
-          })}
-        </div>,
-        document.body,
-      )}
-    </ToastCtx.Provider>
-  )
-}
-
-/* Modal */
-const MODAL_TONES = {
-  red: { ring: 'bg-rose-50 ring-rose-50/60', icon: 'text-rose-500', btn: 'bg-rose-500 shadow-rose-500/30 hover:bg-rose-600' },
-  green: { ring: 'bg-gc-100 ring-gc-100/60', icon: 'text-gc-700', btn: 'bg-gc-800 shadow-gc-800/30 hover:bg-gc-900' },
-  amber: { ring: 'bg-amber-50 ring-amber-50/60', icon: 'text-amber-500', btn: 'bg-amber-500 shadow-amber-500/30 hover:bg-amber-600' },
-}
-
-function ConfirmModal({ icon: Icon, tone = 'red', title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', hideCancel, onConfirm, onCancel }) {
-  const t = MODAL_TONES[tone]
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onCancel()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onCancel])
-  return createPortal(
-    <div className="no-print modal-backdrop fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={onCancel}>
-      <div role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}
-        className="modal-pop w-full max-w-sm rounded-3xl bg-white p-7 text-center shadow-2xl shadow-black/30">
-        {Icon && (
-          <div className={`mx-auto grid size-16 place-items-center rounded-full ring-8 ${t.ring}`}>
-            <Icon size={26} className={t.icon} />
-          </div>
-        )}
-        <h2 className="mt-5 text-lg font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">{message}</p>
-        <div className={`mt-6 grid gap-3 ${hideCancel ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          {!hideCancel && (
-            <button autoFocus onClick={onCancel} className="rounded-xl py-2.5 text-[13px] font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50">
-              {cancelLabel}
-            </button>
-          )}
-          <button autoFocus={hideCancel} onClick={onConfirm} className={`rounded-xl py-2.5 text-[13px] font-semibold text-white shadow-md transition ${t.btn}`}>
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-/* Kebab menu rendered in a portal so table overflow never clips it */
 function ActionMenu({ items }) {
   const [pos, setPos] = useState(null)
   const btn = useRef(null)
@@ -573,12 +502,13 @@ const NAV_LINKS = [
 
 function AdminShell() {
   const nav = useNavigate()
+  const toast = useToast()
   const { pathname } = useLocation()
   const bookings = useBookings()
   const pending = bookings.filter((b) => b.status === 'Pending').length
   const [drawer, setDrawer] = useState(false)
   const [confirmOut, setConfirmOut] = useState(false)
-  const logout = () => { clearSession(); nav('/admin/login') }
+  const logout = () => { clearSession(); setConfirmOut(false); nav('/admin/login'); toast('You have been logged out.') }
 
   return (
     <div className="app-shell relative flex h-dvh overflow-hidden bg-gc-950 bg-[radial-gradient(60rem_40rem_at_-10%_-10%,rgba(58,165,53,.28),transparent),radial-gradient(40rem_30rem_at_0%_110%,rgba(232,185,61,.10),transparent)]">
@@ -718,6 +648,7 @@ const facilityFromApi = (room) => ({
   status: room.status === 'maintenance' ? 'Under Maintenance' : room.status === 'reserved' ? 'Occupied' : 'Available',
   amenities: room.amenities ?? [],
   overview: room.overview ?? '',
+  image: room.image_url ?? room.photo_url ?? '',
 })
 
 const refreshAdminData = async () => {
@@ -739,6 +670,7 @@ const makeFacilityUnavailable = async (id) => {
 
 function LoginPage() {
   const nav = useNavigate()
+  const toast = useToast()
   const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -765,9 +697,12 @@ function LoginPage() {
       }
       ;(remember ? localStorage : sessionStorage).setItem('gc_token', data.token)
       localStorage.setItem('gc_admin', JSON.stringify(data.admin))
+      toast(`Logged in. Welcome, ${(data.admin?.full_name || 'Admin').split(' ')[0]}!`)
       nav('/admin/dashboard')
     } catch (err) {
-      setError((isAxiosError(err) && err.response?.data?.error) || err.message || 'Unable to sign in. Please try again.')
+      const msg = (isAxiosError(err) && err.response?.data?.error) || err.message || 'Unable to sign in. Please try again.'
+      setError(msg)
+      toast(msg, 'error')
     } finally {
       setLoading(false)
     }
@@ -1069,20 +1004,30 @@ function NewBookingPage() {
   const [f, setF] = useState(BLANK_BOOKING)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [asking, setAsking] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const h = (t) => <p className="col-span-2 mt-3 text-sm font-semibold text-gc-950">{t}</p>
 
-  const save = async () => {
+  const fail = (msg) => { setError(msg); toast(msg, 'error') }
+  // step 1: validate, then ask Yes / No
+  const validate = () => {
     const missing = ['room', 'date', 'start', 'end', 'who', 'purpose'].find((k) => !f[k].trim())
-    if (missing) return setError('Please fill in facility, date, time, requester and title.')
-    if (f.end <= f.start) return setError('End time must be later than the start time.')
+    if (missing) return fail('Please fill in facility, date, time, requester and title.')
+    if (f.end <= f.start) return fail('End time must be later than the start time.')
     const fac = facilities.find((x) => x.name === f.room)
-    if (fac?.status === 'Under Maintenance') return setError(`${f.room} is under maintenance.`)
-    if (fac && Number(f.guests) > fac.capacity) return setError(`${f.room} only fits ${fac.capacity} people.`)
+    if (fac?.status === 'Under Maintenance') return fail(`${f.room} is under maintenance.`)
+    if (fac && Number(f.guests) > fac.capacity) return fail(`${f.room} only fits ${fac.capacity} people.`)
+    setError('')
+    setAsking(true)
+  }
+  // step 2: the actual save (runs after "Yes")
+  const save = async () => {
+    setAsking(false)
+    const fac = facilities.find((x) => x.name === f.room)
     const draft = { ...f, guests: Number(f.guests) || 0, who: f.who.trim(), purpose: f.purpose.trim() }
     if (USE_MOCK) {
       const clash = findConflict(draft)
-      if (clash) return setError(`Conflict: ${f.room} is already confirmed for ${clash.who} (${whenLabel(clash)}).`)
+      if (clash) return fail(`Conflict: ${f.room} is already confirmed for ${clash.who} (${whenLabel(clash)}).`)
       addBooking({ ...draft, dept: f.dept.trim() || '-', speaker: f.speaker.trim() || '-', equipment: f.equipment.trim() || 'None', remarks: f.remarks.trim() || 'None' })
       toast('Booking created')
       nav('/admin/bookings')
@@ -1105,7 +1050,7 @@ function NewBookingPage() {
       toast('Booking created; only the fields supported by the current database were saved.', 'info')
       nav('/admin/bookings')
     } catch (requestError) {
-      setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not create booking.')
+      fail((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not create booking.')
     } finally {
       setSaving(false)
     }
@@ -1116,10 +1061,11 @@ function NewBookingPage() {
       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gc-600">New booking</p>
       <h1 className="mt-1 text-xl font-semibold text-gc-950">Create a reservation</h1>
       <p className="text-xs text-slate-500">Bookings created by an admin are confirmed right away.</p>
-      <hr className="mt-5 border-slate-100" />
+      <RequiredNote className="mt-2" />
+      <hr className="mt-4 border-slate-100" />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Facility name">
+        <Field label="Facility name" required>
           <select value={f.room} onChange={set('room')} className={inputCls}>
             <option value="">Select a facility</option>
             {facilities.map((x) => (
@@ -1127,12 +1073,12 @@ function NewBookingPage() {
             ))}
           </select>
         </Field>
-        <Field label="Date"><input type="date" value={f.date} onChange={set('date')} className={inputCls} /></Field>
-        <Field label="Start time"><input type="time" value={f.start} onChange={set('start')} className={inputCls} /></Field>
-        <Field label="End time"><input type="time" value={f.end} onChange={set('end')} className={inputCls} /></Field>
+        <Field label="Date" required><input type="date" value={f.date} onChange={set('date')} className={inputCls} /></Field>
+        <Field label="Start time" required><input type="time" value={f.start} onChange={set('start')} className={inputCls} /></Field>
+        <Field label="End time" required><input type="time" value={f.end} onChange={set('end')} className={inputCls} /></Field>
         {h('Event information')}
-        <Field label="Title"><input value={f.purpose} onChange={set('purpose')} placeholder="e.g. Officer meeting" className={inputCls} /></Field>
-        <Field label="Requested by"><input value={f.who} onChange={set('who')} placeholder="Full name" className={inputCls} /></Field>
+        <Field label="Title" required><input value={f.purpose} onChange={set('purpose')} placeholder="e.g. Officer meeting" className={inputCls} /></Field>
+        <Field label="Requested by" required><input value={f.who} onChange={set('who')} placeholder="Full name" className={inputCls} /></Field>
         <Field label="Department"><input value={f.dept} onChange={set('dept')} placeholder="e.g. Student Council" className={inputCls} /></Field>
         <Field label="Speaker(s)"><input value={f.speaker} onChange={set('speaker')} className={inputCls} /></Field>
         <Field label="Description" className="sm:col-span-2"><textarea rows={3} value={f.description} onChange={set('description')} className={inputCls} /></Field>
@@ -1146,14 +1092,19 @@ function NewBookingPage() {
       <hr className="mt-6 border-slate-100" />
       <div className="mt-5 flex justify-end gap-3">
         <Button variant="soft" onClick={() => nav(-1)}>Cancel</Button>
-        <Button className="px-8" onClick={save} disabled={saving}>{saving ? 'Creating…' : 'Create booking'}</Button>
+        <Button className="px-8" onClick={validate} disabled={saving}>{saving ? 'Creating…' : 'Create booking'}</Button>
       </div>
+
+      {asking && (
+        <ConfirmModal icon={CalendarCheck} tone="green" title="Create this booking?" confirmLabel="Yes" cancelLabel="No"
+          message={`${f.room} on ${f.date}. Admin bookings are confirmed right away.`} onCancel={() => setAsking(false)} onConfirm={save} />
+      )}
     </Card>
   )
 }
 
 /* ---- Facilities list + add form ---- */
-const EMPTY_FACILITY = { name: '', code: '', location: '', type: 'Laboratory', capacity: 40, rate: 0 }
+const EMPTY_FACILITY = { name: '', code: '', location: '', type: 'Laboratory', capacity: 40, rate: 0, image: '' }
 
 function AddFacilityForm({ onClose }) {
   const toast = useToast()
@@ -1162,10 +1113,17 @@ function AddFacilityForm({ onClose }) {
   const [amenities, setAmenities] = useState([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [asking, setAsking] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  const fail = (msg) => { setError(msg); toast(msg, 'error') }
+  const validate = () => {
+    if (!f.name.trim() || !f.code.trim()) return fail('Facility name and room code are required.')
+    if (facilities.some((x) => x.code.toLowerCase() === f.code.trim().toLowerCase())) return fail(`Room code ${f.code.trim()} already exists.`)
+    setError('')
+    setAsking(true)
+  }
   const submit = async () => {
-    if (!f.name.trim() || !f.code.trim()) return setError('Facility name and room code are required.')
-    if (facilities.some((x) => x.code.toLowerCase() === f.code.trim().toLowerCase())) return setError(`Room code ${f.code.trim()} already exists.`)
+    setAsking(false)
     const facility = {
       name: f.name.trim(),
       code: f.code.trim(),
@@ -1174,6 +1132,7 @@ function AddFacilityForm({ onClose }) {
       amenities,
       capacity: Number(f.capacity) || 0,
       rate: Number(f.rate) || 0,
+      image: f.image,
     }
     if (USE_MOCK) {
       addFacility(facility)
@@ -1191,12 +1150,13 @@ function AddFacilityForm({ onClose }) {
         location: facility.location,
         type: facility.type,
         capacity: facility.capacity,
+        image_url: facility.image || undefined,
       })
       await refreshAdminData()
       toast('Facility added; amenities and hourly rate are not stored in the current database.', 'info')
       onClose()
     } catch (requestError) {
-      setError((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not add facility.')
+      fail((isAxiosError(requestError) && requestError.response?.data?.error) || 'Could not add facility.')
     } finally {
       setSaving(false)
     }
@@ -1206,9 +1166,10 @@ function AddFacilityForm({ onClose }) {
       <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Close"><X size={16} /></button>
       <h2 className="text-base font-semibold text-slate-900">Add facility</h2>
       <p className="text-xs text-slate-500">New spaces appear immediately in search results.</p>
+      <RequiredNote className="mt-2" />
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Facility name"><input value={f.name} onChange={set('name')} placeholder="e.g. Computer Lab" className={inputCls} /></Field>
-        <Field label="Room code"><input value={f.code} onChange={set('code')} placeholder="e.g. CL-123" className={inputCls} /></Field>
+        <Field label="Facility name" required><input value={f.name} onChange={set('name')} placeholder="e.g. Computer Lab" className={inputCls} /></Field>
+        <Field label="Room code" required><input value={f.code} onChange={set('code')} placeholder="e.g. CL-123" className={inputCls} /></Field>
         <Field label="Location"><input value={f.location} onChange={set('location')} placeholder="e.g. 5th Floor - Main Building" className={inputCls} /></Field>
         <Field label="Type">
           <select value={f.type} onChange={set('type')} className={inputCls}>{FACILITY_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
@@ -1216,9 +1177,14 @@ function AddFacilityForm({ onClose }) {
         <Field label="Max capacity"><input type="number" min="0" value={f.capacity} onChange={set('capacity')} className={inputCls} /></Field>
         <Field label="Hourly rate (₱, 0 = free)"><input type="number" min="0" value={f.rate} onChange={set('rate')} className={inputCls} /></Field>
         <Field label="Included amenities" className="sm:col-span-2 lg:col-span-3"><AmenitiesEditor value={amenities} onChange={setAmenities} /></Field>
+        <Field label="Photo of the room (optional)" className="sm:col-span-2 lg:col-span-3"><ImageUpload value={f.image} onChange={(image) => setF((p) => ({ ...p, image }))} onError={(m) => toast(m, 'error')} /></Field>
       </div>
       {error && <p role="alert" className="mt-4 text-xs font-medium text-rose-600">{error}</p>}
-      <div className="mt-5 flex justify-end"><Button onClick={submit} disabled={saving}><Plus size={14} /> {saving ? 'Adding…' : 'Add facility'}</Button></div>
+      <div className="mt-5 flex justify-end"><Button onClick={validate} disabled={saving}><Plus size={14} /> {saving ? 'Adding…' : 'Add facility'}</Button></div>
+      {asking && (
+        <ConfirmModal icon={Building2} tone="green" title="Add this facility?" confirmLabel="Yes" cancelLabel="No"
+          message={`${f.name.trim()} (${f.code.trim()}) will be added to the bookable spaces.`} onCancel={() => setAsking(false)} onConfirm={submit} />
+      )}
     </Card>
   )
 }
@@ -1308,10 +1274,16 @@ function FacilityDetailsPage() {
   const original = facilities.find((x) => x.id === Number(id))
   const [f, setF] = useState(() => (original ? { ...original } : null))
   const [confirm, setConfirm] = useState(false)
+  const [asking, setAsking] = useState(false)
   const [saving, setSaving] = useState(false)
   if (!f) return <Navigate to="/admin/facilities" replace />
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  const validate = () => {
+    if (!f.name?.trim() || !f.code?.trim()) return toast('Facility name and room code are required.', 'error')
+    setAsking(true)
+  }
   const save = async () => {
+    setAsking(false)
     if (USE_MOCK) {
       updateFacility(id, { ...f, capacity: Number(f.capacity) || 0, rate: Number(f.rate) || 0 })
       toast('Changes saved')
@@ -1328,6 +1300,7 @@ function FacilityDetailsPage() {
         type: f.type,
         capacity: Number(f.capacity) || 0,
         status: f.status,
+        image_url: f.image || null,
       })
       await refreshAdminData()
       toast('Facility updated; amenities, overview and hourly rate are not stored in the current database.', 'info')
@@ -1351,12 +1324,13 @@ function FacilityDetailsPage() {
     <Card className="mx-auto max-w-3xl p-6 sm:p-8">
       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gc-600">Edit facility</p>
       <h1 className="mt-1 text-xl font-semibold text-slate-900">{original?.name}</h1>
-      <hr className="mt-5 border-slate-100" />
+      <RequiredNote className="mt-2" />
+      <hr className="mt-4 border-slate-100" />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Facility name"><input value={f.name} onChange={set('name')} placeholder="e.g. Conference Room A" className={inputCls} /></Field>
+        <Field label="Facility name" required><input value={f.name} onChange={set('name')} placeholder="e.g. Conference Room A" className={inputCls} /></Field>
         <Field label="Location"><input value={f.location} onChange={set('location')} placeholder="e.g. 3rd Floor - Main Building" className={inputCls} /></Field>
-        <Field label="Room code"><input value={f.code} onChange={set('code')} placeholder="e.g. CR-123" className={inputCls} /></Field>
+        <Field label="Room code" required><input value={f.code} onChange={set('code')} placeholder="e.g. CR-123" className={inputCls} /></Field>
         <Field label="Max capacity"><input type="number" min="0" value={f.capacity} onChange={set('capacity')} className={inputCls} /></Field>
         <Field label="Type of facility">
           <select value={f.type} onChange={set('type')} className={inputCls}>{FACILITY_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
@@ -1364,6 +1338,7 @@ function FacilityDetailsPage() {
         <Field label="Hourly rate (₱, 0 = free)"><input type="number" min="0" value={f.rate} onChange={set('rate')} className={inputCls} /></Field>
         <Field label="Included amenities" className="sm:col-span-2"><AmenitiesEditor showList value={f.amenities} onChange={(amenities) => setF({ ...f, amenities })} /></Field>
         <Field label="Facility overview" className="sm:col-span-2"><textarea rows={4} value={f.overview} onChange={set('overview')} className={inputCls} /></Field>
+        <Field label="Photo of the room (optional)" className="sm:col-span-2"><ImageUpload value={f.image} onChange={(image) => setF((p) => ({ ...p, image }))} onError={(m) => toast(m, 'error')} /></Field>
         <Field label="Status" className="sm:col-span-2">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {FACILITY_STATUSES.map((s) => (
@@ -1381,10 +1356,14 @@ function FacilityDetailsPage() {
         <Button variant="danger" onClick={() => setConfirm(true)}><Trash2 size={13} /> Remove facility</Button>
         <div className="flex gap-3">
           <Button variant="soft" onClick={() => nav('/admin/facilities')}>Back</Button>
-          <Button className="px-7" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
+          <Button className="px-7" onClick={validate} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
         </div>
       </div>
 
+      {asking && (
+        <ConfirmModal icon={Building2} tone="green" title="Save these changes?" confirmLabel="Yes" cancelLabel="No"
+          message={`Update ${f.name || 'this facility'} with the details you entered.`} onCancel={() => setAsking(false)} onConfirm={save} />
+      )}
       {confirm && (
         <ConfirmModal icon={Trash2} tone="red" title={`Remove ${f.name}?`} confirmLabel="Yes, remove" onCancel={() => setConfirm(false)}
           message="This space will no longer be bookable. Existing bookings keep their record."

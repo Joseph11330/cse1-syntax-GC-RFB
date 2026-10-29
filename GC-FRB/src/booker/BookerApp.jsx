@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { createPortal } from 'react-dom'
 import { isAxiosError } from 'axios'
 import { getSupabaseClient } from '../lib/supabase'
 import {
@@ -10,6 +9,13 @@ import {
   ShieldCheck, Smartphone, Sparkles, Speaker, Tv, Users, Video, Wifi, Wrench, X, XCircle, Zap,
 } from 'lucide-react'
 import api from '../api'
+import ConfirmModal from '../components/ConfirmModal'
+import { Req, RequiredNote } from '../components/Req'
+import { ToastProvider } from '../components/Toast'
+import { useToast } from '../components/toastContext'
+import { displayName, firstNameOf } from '../lib/name'
+import RegisterPage from './RegisterPage'
+import { GHOST, INPUT, LABEL, PRIMARY } from './ui'
 import logoSidebar from '../assets/logo-sidebar.png'
 import './booker.css'
 
@@ -169,6 +175,7 @@ function Navbar() {
           {NAV.map((n) => <li key={n.href}><a href={n.href} className="transition hover:text-gc-600">{n.label}</a></li>)}
         </ul>
         <div className="hidden items-center gap-3 md:flex">
+          <Link to="/register" className="text-sm font-semibold text-gc-800 transition hover:text-gc-600">Register</Link>
           <LinkButton to="/login" className="!py-2">Log in</LinkButton>
         </div>
         <button className="md:hidden" aria-label="Toggle menu" onClick={() => setOpen((o) => !o)}>{open ? <X /> : <Menu />}</button>
@@ -176,6 +183,7 @@ function Navbar() {
       {open && (
         <div className="space-y-1 border-t border-gc-100 bg-white px-5 pb-5 pt-2 md:hidden">
           {NAV.map((n) => <a key={n.href} href={n.href} onClick={() => setOpen(false)} className="block py-2.5 text-slate-700">{n.label}</a>)}
+          <Link to="/register" onClick={() => setOpen(false)} className="block py-2.5 font-semibold text-gc-800">Register</Link>
           <LinkButton to="/login" className="mt-2 w-full">Log in</LinkButton>
         </div>
       )}
@@ -431,10 +439,6 @@ const ADDONS = [
 
 /* ---- shared look ---- */
 const CARD = 'rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,40,15,.04),0_14px_34px_-18px_rgba(15,60,20,.22)]'
-const INPUT = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-gc-600 focus:ring-4 focus:ring-gc-500/15'
-const LABEL = 'block text-[11px] font-semibold text-slate-800'
-const PRIMARY = 'inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gc-800 to-gc-950 px-5 py-3 text-xs font-semibold text-white shadow-lg shadow-gc-950/25 transition hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50'
-const GHOST = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50'
 
 const PILL = {
   Pending: 'bg-amber-50 text-amber-700 ring-amber-200', Confirmed: 'bg-gc-100 text-gc-700 ring-gc-500/30',
@@ -467,35 +471,6 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-const MODAL_TONES = {
-  red: { ring: 'bg-rose-50 ring-rose-50/60', icon: 'text-rose-500', btn: 'bg-rose-500 shadow-rose-500/30 hover:bg-rose-600' },
-  green: { ring: 'bg-gc-100 ring-gc-100/60', icon: 'text-gc-700', btn: 'bg-gc-800 shadow-gc-800/30 hover:bg-gc-900' },
-}
-// same confirm dialog as the admin side
-function ConfirmModal({ icon: Icon, tone = 'red', title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel }) {
-  const t = MODAL_TONES[tone]
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onCancel()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onCancel])
-  return createPortal(
-    <div className="modal-backdrop fixed inset-0 z-[70] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={onCancel}>
-      <div role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}
-        className="modal-pop w-full max-w-sm rounded-3xl bg-white p-7 text-center shadow-2xl shadow-black/30">
-        {Icon && <div className={`mx-auto grid size-16 place-items-center rounded-full ring-8 ${t.ring}`}><Icon size={26} className={t.icon} /></div>}
-        <h2 className="mt-5 text-lg font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">{message}</p>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button autoFocus onClick={onCancel} className="rounded-xl py-2.5 text-[13px] font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50">{cancelLabel}</button>
-          <button onClick={onConfirm} className={`rounded-xl py-2.5 text-[13px] font-semibold text-white shadow-md transition ${t.btn}`}>{confirmLabel}</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
 /* ───────────── 5. login ───────────── */
 const GoogleG = () => (
   <svg viewBox="0 0 24 24" className="size-4"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" /><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" /></svg>
@@ -506,6 +481,7 @@ const MicrosoftLogo = () => (
 
 function LoginPage() {
   const nav = useNavigate()
+  const toast = useToast()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
@@ -531,9 +507,12 @@ function LoginPage() {
       }
       ;(remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, data.token)
       localStorage.setItem(USER_KEY, JSON.stringify(data.user))
+      toast(`Logged in. Welcome, ${firstNameOf(data.user) || 'student'}!`)
       nav('/dashboard')
     } catch (err) {
-      setError((isAxiosError(err) && err.response?.data?.error) || err.message || 'Unable to sign in. Please try again.')
+      const msg = (isAxiosError(err) && err.response?.data?.error) || err.message || 'Unable to sign in. Please try again.'
+      setError(msg)
+      toast(msg, 'error')
     } finally {
       setLoading(false)
     }
@@ -628,7 +607,8 @@ function LoginPage() {
               className={`${GHOST} !py-2.5 disabled:opacity-60`}><GoogleG />{googleLoading ? 'Connecting…' : 'Google'}</button>
             <button type="button" onClick={() => setError('Microsoft sign-in is coming soon.')} className={`${GHOST} !py-2.5`}><MicrosoftLogo />Microsoft</button>
           </div>
-          {USE_MOCK && <p className="mt-6 text-center text-[11px] text-slate-400">Dev mode: any email + 4 character password works.</p>}
+          <p className="mt-6 text-center text-xs text-slate-600">No account yet? <Link to="/register" className="font-semibold text-gc-800 hover:underline">Register</Link></p>
+          {USE_MOCK && <p className="mt-3 text-center text-[11px] text-slate-400">Dev mode: any email + 4 character password works.</p>}
         </div>
       </main>
     </div>
@@ -637,6 +617,7 @@ function LoginPage() {
 
 function GoogleAuthCallback() {
   const nav = useNavigate()
+  const toast = useToast()
   const started = useRef(false)
   const [error, setError] = useState('')
 
@@ -664,17 +645,20 @@ function GoogleAuthCallback() {
         localStorage.setItem(USER_KEY, JSON.stringify(data.user))
         const { error: signOutError } = await supabase.auth.signOut()
         if (signOutError) console.error('Could not clear temporary Google session:', signOutError.message)
+        toast(`Logged in. Welcome, ${firstNameOf(data.user) || 'student'}!`)
         nav('/dashboard', { replace: true })
       } catch (authError) {
         if (!active) return
         sessionStorage.removeItem('gc_student_oauth_remember')
-        setError((isAxiosError(authError) && authError.response?.data?.error) || authError.message || 'Google sign-in failed. Please try again.')
+        const msg = (isAxiosError(authError) && authError.response?.data?.error) || authError.message || 'Google sign-in failed. Please try again.'
+        setError(msg)
+        toast(msg, 'error')
       }
     }
 
     completeSignIn()
     return () => { active = false }
-  }, [nav])
+  }, [nav, toast])
 
   return (
     <main className="grid min-h-dvh place-items-center bg-white px-6">
@@ -704,6 +688,7 @@ const SIDE_NAV = [
 
 function PortalShell() {
   const nav = useNavigate()
+  const toast = useToast()
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
   const [about, setAbout] = useState(false)
@@ -747,7 +732,7 @@ function PortalShell() {
     </div></div>
   }
 
-  const logout = () => { clearStudent(); nav('/login') }
+  const logout = () => { clearStudent(); setConfirmOut(false); nav('/login'); toast('You have been logged out.') }
   const link = ({ isActive }) =>
     `relative flex items-center gap-3 rounded-xl px-3.5 py-3 text-xs font-semibold transition ${isActive ? 'bg-white/12 text-white shadow-inner ring-1 ring-white/10' : 'text-white/80 hover:bg-white/8 hover:text-white'}`
 
@@ -911,7 +896,7 @@ function DashboardPage() {
   const { data, error } = useDashboard()
   const [q, setQ] = useState('')
   const user = readStudent()
-  const firstName = (user.full_name || 'there').split(' ')[0]
+  const firstName = firstNameOf(user) || 'there'
   const search = (e) => { e.preventDefault(); nav(`/book${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`) }
 
   return (
@@ -1041,13 +1026,21 @@ function AmenityChips({ items, check = false }) {
   )
 }
 
+const roomPhotos = (room) => (room.photos?.length ? room.photos : room.image ? [room.image] : [])
+
 function RoomCard({ room, onDetails, onBook }) {
   const bookable = room.status === 'Available'
+  const [broken, setBroken] = useState(false)
+  const photo = !broken && roomPhotos(room)[0]
   return (
     <article className={`${CARD} anim-fade-up group overflow-hidden transition duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_48px_-20px_rgba(15,60,20,.35)]`}>
       <div className="relative h-40 overflow-hidden bg-gradient-to-b from-gc-500 to-gc-950">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(255,255,255,.28),transparent_55%)] transition duration-500 group-hover:scale-125" />
-        <Building2 className="absolute -bottom-4 -right-3 size-28 text-white/10" strokeWidth={1.25} />
+        {photo ? (
+          <img src={photo} alt={room.name} loading="lazy" onError={() => setBroken(true)} className="absolute inset-0 size-full object-cover transition duration-500 group-hover:scale-105" />
+        ) : (<>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(255,255,255,.28),transparent_55%)] transition duration-500 group-hover:scale-125" />
+          <Building2 className="absolute -bottom-4 -right-3 size-28 text-white/10" strokeWidth={1.25} />
+        </>)}
         <span className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold shadow ${ROOM_BADGE[room.status]}`}>
           <span className={`size-1.5 rounded-full ${BADGE_DOT[room.status]}`} />{room.status}
         </span>
@@ -1100,21 +1093,28 @@ function DetailsStep({ d, set, go, back }) {
   const bad = toMin(d.end) <= toMin(d.start)
   useEffect(() => {
     if (USE_MOCK) return
-    api.get(`/api/rooms/${d.room.id}`, authCfg()).then((r) => setMore({ overview: r.data.room.overview, rules: r.data.room.rules, amenities: r.data.room.amenities?.length ? r.data.room.amenities : d.room.amenities })).catch(() => {})
+    api.get(`/api/rooms/${d.room.id}`, authCfg()).then((r) => setMore({ overview: r.data.room.overview, rules: r.data.room.rules, amenities: r.data.room.amenities?.length ? r.data.room.amenities : d.room.amenities, image: r.data.room.image_url ?? r.data.room.photo_url ?? d.room.image, photos: r.data.room.photos ?? d.room.photos })).catch(() => {})
   }, [d.room])
   const shades = ['from-gc-500 to-gc-950', 'from-gc-600 to-gc-900', 'from-gc-700 to-gc-950']
+  const photos = roomPhotos(room)
+  const slides = photos.length || 3
   return (
     <FlowFrame step={2}>
       <BackLink onClick={back}>Back to results</BackLink>
       <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div>
-          <div className={`relative h-72 overflow-hidden rounded-2xl bg-gradient-to-b ${shades[slide]} transition-colors duration-500 sm:h-80`}>
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_15%,rgba(255,255,255,.28),transparent_55%)]" />
-            <Building2 className="absolute -bottom-6 -right-4 size-48 text-white/10" strokeWidth={1.1} />
-            <button aria-label="Previous photo" onClick={() => setSlide((s) => (s + 2) % 3)} className="absolute left-3 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/25 text-white backdrop-blur transition hover:bg-white/40"><ArrowLeft className="size-4" /></button>
-            <button aria-label="Next photo" onClick={() => setSlide((s) => (s + 1) % 3)} className="absolute right-3 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/25 text-white backdrop-blur transition hover:bg-white/40"><ArrowRight className="size-4" /></button>
+          <div className={`relative h-72 overflow-hidden rounded-2xl bg-gradient-to-b ${shades[slide % 3]} transition-colors duration-500 sm:h-80`}>
+            {photos.length ? (
+              <img key={photos[slide % slides]} src={photos[slide % slides]} alt={`${room.name} photo ${(slide % slides) + 1}`} className="absolute inset-0 size-full object-cover" />
+            ) : (<>
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_15%,rgba(255,255,255,.28),transparent_55%)]" />
+              <Building2 className="absolute -bottom-6 -right-4 size-48 text-white/10" strokeWidth={1.1} />
+              <span className="absolute bottom-3 left-3 rounded-full bg-black/25 px-3 py-1 text-[10px] font-medium text-white/90 backdrop-blur">Photo coming soon</span>
+            </>)}
+            <button aria-label="Previous photo" onClick={() => setSlide((s) => (s + slides - 1) % slides)} className="absolute left-3 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/25 text-white backdrop-blur transition hover:bg-white/40"><ArrowLeft className="size-4" /></button>
+            <button aria-label="Next photo" onClick={() => setSlide((s) => (s + 1) % slides)} className="absolute right-3 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/25 text-white backdrop-blur transition hover:bg-white/40"><ArrowRight className="size-4" /></button>
           </div>
-          <div className="mt-3 flex justify-center gap-1.5">{[0, 1, 2].map((i) => <button key={i} aria-label={`Photo ${i + 1}`} onClick={() => setSlide(i)} className={`h-1.5 rounded-full transition-all ${slide === i ? 'w-5 bg-gc-900' : 'w-1.5 bg-slate-300'}`} />)}</div>
+          <div className="mt-3 flex justify-center gap-1.5">{Array.from({ length: slides }, (_, i) => i).map((i) => <button key={i} aria-label={`Photo ${i + 1}`} onClick={() => setSlide(i)} className={`h-1.5 rounded-full transition-all ${slide === i ? 'w-5 bg-gc-900' : 'w-1.5 bg-slate-300'}`} />)}</div>
 
           <h2 className="mt-5 text-xl font-bold text-slate-950">{room.name}</h2>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="size-3.5" />{room.building} - {titleCase(room.floor)}</p>
@@ -1138,10 +1138,11 @@ function DetailsStep({ d, set, go, back }) {
 
         <aside className={`${CARD} h-fit p-5 lg:sticky lg:top-0`}>
           <p className="text-[10px] font-bold uppercase tracking-[.16em] text-slate-500">Book this space</p>
-          <label className={`${LABEL} mt-4`}>Date<input type="date" min={todayISO()} value={d.date} onChange={(e) => set({ date: e.target.value })} className={INPUT} /></label>
+          <RequiredNote className="mt-1" />
+          <label className={`${LABEL} mt-4`}>Date<Req /><input type="date" min={todayISO()} value={d.date} onChange={(e) => set({ date: e.target.value })} className={INPUT} /></label>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className={LABEL}>Start Time<input type="time" value={d.start} onChange={(e) => set({ start: e.target.value })} className={INPUT} /></label>
-            <label className={LABEL}>End Time<input type="time" value={d.end} onChange={(e) => set({ end: e.target.value })} className={INPUT} /></label>
+            <label className={LABEL}>Start Time<Req /><input type="time" value={d.start} onChange={(e) => set({ start: e.target.value })} className={INPUT} /></label>
+            <label className={LABEL}>End Time<Req /><input type="time" value={d.end} onChange={(e) => set({ end: e.target.value })} className={INPUT} /></label>
           </div>
           {bad && <p role="alert" className="mt-2 text-[11px] text-red-600">End time must be after the start time.</p>}
           <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
@@ -1170,14 +1171,15 @@ function ReservationStep({ d, set, go, back, addons, cost }) {
   return (
     <FlowFrame step={3} title="Reservation details" sub="Tell us what the space is for, who's joining, and what you'll need in the room.">
       <BackLink onClick={back}>Back to details</BackLink>
+      <RequiredNote className="mt-3" />
       <div className="mt-4 grid items-start gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
           <section className={`${CARD} p-5`}>
             <h2 className="flex items-center gap-2 text-sm font-bold text-slate-950"><ClipboardList className="size-4 text-gc-600" />Event Information</h2>
             <div className="mt-4 space-y-4">
-              <label className={LABEL}>Meeting / event title<input value={d.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Cybersecurity & Privacy Seminar" className={INPUT} />{err('title')}</label>
+              <label className={LABEL}>Meeting / event title<Req /><input value={d.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Cybersecurity & Privacy Seminar" className={INPUT} />{err('title')}</label>
               <label className={LABEL}>Event description<textarea rows={4} value={d.description} onChange={(e) => set({ description: e.target.value })} placeholder="What will happen in the room?" className={`${INPUT} resize-none`} /></label>
-              <label className={LABEL}>Department
+              <label className={LABEL}>Department<Req />
                 <span className="relative block">
                   <select value={d.department} onChange={(e) => set({ department: e.target.value })} className={`${INPUT} appearance-none pr-9`}>
                     <option value="">Select department</option>{DEPARTMENTS.map((x) => <option key={x}>{x}</option>)}
@@ -1208,7 +1210,7 @@ function ReservationStep({ d, set, go, back, addons, cost }) {
                 )
               })}
             </div>
-            <label className={`${LABEL} mt-4 max-w-[10rem]`}>Expected guest count<input type="number" min={1} value={d.guests} onChange={(e) => set({ guests: e.target.value })} className={INPUT} />{err('guests')}</label>
+            <label className={`${LABEL} mt-4 max-w-[10rem]`}>Expected guest count<Req /><input type="number" min={1} value={d.guests} onChange={(e) => set({ guests: e.target.value })} className={INPUT} />{err('guests')}</label>
             <label className={`${LABEL} mt-4`}>Special instruction / remarks<textarea rows={3} value={d.remarks} onChange={(e) => set({ remarks: e.target.value })} placeholder="Anything in the room that admin should know" className={`${INPUT} resize-none`} /></label>
           </section>
         </div>
@@ -1264,6 +1266,7 @@ function PaymentStep({ d, set, back, cost, addons, submitting, submitError, onPa
 
       <section className={`${CARD} mt-6 p-5`}>
         <h2 className="text-sm font-bold text-slate-950">Payment Method</h2>
+        <RequiredNote className="mt-1" />
         <div role="radiogroup" aria-label="Payment method" className="mt-4 grid grid-cols-2 gap-4">
           {methods.map(({ id, label, Icon }) => (
             <button key={id} role="radio" aria-checked={d.method === id} onClick={() => set({ method: id })}
@@ -1274,19 +1277,19 @@ function PaymentStep({ d, set, back, cost, addons, submitting, submitError, onPa
         </div>
 
         {d.method === 'gcash' ? (
-          <label className={`${LABEL} mt-5`}>GCash mobile number
+          <label className={`${LABEL} mt-5`}>GCash mobile number<Req />
             <input inputMode="numeric" value={d.gcash} onChange={(e) => set({ gcash: e.target.value })} placeholder="09XX XXX XXXX" className={INPUT} />{err('gcash')}
           </label>
         ) : (
           <div className="mt-5 space-y-4">
-            <label className={LABEL}>Card number
+            <label className={LABEL}>Card number<Req />
               <input inputMode="numeric" autoComplete="cc-number" value={d.card} onChange={(e) => set({ card: onlyDigits(e.target.value).slice(0, 16).replace(/(.{4})/g, '$1 ').trim() })} placeholder="4242 4242 4242 4242" className={INPUT} />{err('card')}
             </label>
             <div className="grid grid-cols-2 gap-4">
-              <label className={LABEL}>Expiry date
+              <label className={LABEL}>Expiry date<Req />
                 <input inputMode="numeric" autoComplete="cc-exp" value={d.expiry} onChange={(e) => { const v = onlyDigits(e.target.value).slice(0, 4); set({ expiry: v.length > 2 ? `${v.slice(0, 2)}/${v.slice(2)}` : v }) }} placeholder="MM/YY" className={INPUT} />{err('expiry')}
               </label>
-              <label className={LABEL}>CVV
+              <label className={LABEL}>CVV<Req />
                 <input inputMode="numeric" autoComplete="cc-csc" type="password" value={d.cvv} onChange={(e) => set({ cvv: onlyDigits(e.target.value).slice(0, 4) })} placeholder="123" className={INPUT} />{err('cvv')}
               </label>
             </div>
@@ -1295,7 +1298,7 @@ function PaymentStep({ d, set, back, cost, addons, submitting, submitError, onPa
         {!pays && <p className="mt-4 rounded-lg bg-gc-50 px-3 py-2 text-[11px] text-gc-800">No add-ons selected, so there's nothing to pay. You can confirm your request directly.</p>}
 
         <label className="mt-5 flex items-center gap-2.5 text-[11px] text-slate-700">
-          <input type="checkbox" checked={d.agree} onChange={(e) => set({ agree: e.target.checked })} className="size-4 accent-gc-700" />I agree to the Facility Use Terms &amp; Conditions
+          <input type="checkbox" checked={d.agree} onChange={(e) => set({ agree: e.target.checked })} className="size-4 accent-gc-700" />I agree to the Facility Use Terms &amp; Conditions<Req />
         </label>
         {err('agree')}
         {submitError && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3.5 py-2.5 text-xs text-red-600">{submitError}</p>}
@@ -1317,7 +1320,7 @@ async function downloadReceipt({ done, d, user, qr }) {
   doc.setFillColor(10, 74, 18); doc.rect(0, 0, 148, 28, 'F')
   doc.setTextColor(255); doc.setFontSize(15); doc.text('Gordon College', 12, 13); doc.setFontSize(9); doc.text('Room & Facility Booking · Booking request receipt', 12, 20)
   doc.setTextColor(30); doc.setFontSize(11); doc.text(`Reference: ${done.ref}`, 12, 40)
-  const rows = [['Facility', d.room.name], ['Date', fmtLong(d.date)], ['Time', slotLabel(d.start, d.end)], ['Purpose', d.title], ['Requested by', user.full_name || '—'], ['Organization', d.department || '—'], ['Add-ons', d.equipment.join(', ') || 'None'], ['Total', peso(done.total)], ['Status', 'Pending approval']]
+  const rows = [['Facility', d.room.name], ['Date', fmtLong(d.date)], ['Time', slotLabel(d.start, d.end)], ['Purpose', d.title], ['Requested by', displayName(user) || '—'], ['Organization', d.department || '—'], ['Add-ons', d.equipment.join(', ') || 'None'], ['Total', peso(done.total)], ['Status', 'Pending approval']]
   doc.setFontSize(9.5)
   rows.forEach(([k, v], i) => { doc.setTextColor(120); doc.text(k, 12, 52 + i * 8); doc.setTextColor(20); doc.text(String(v), 60, 52 + i * 8, { maxWidth: 76 }) })
   if (qr) doc.addImage(qr, 'PNG', 49, 128, 50, 50)
@@ -1344,7 +1347,7 @@ function ConfirmationStep({ d, done }) {
           <SummaryRow k="Date" v={fmtLong(d.date)} />
           <SummaryRow k="Time" v={slotLabel(d.start, d.end)} />
           <SummaryRow k="Purpose" v={d.title} />
-          <SummaryRow k="Requested by" v={user.full_name || '—'} />
+          <SummaryRow k="Requested by" v={displayName(user) || '—'} />
           <SummaryRow k="Organization" v={d.department || '—'} />
         </dl>
         <div className="mt-5 border-t border-slate-100 pt-5">
@@ -1360,6 +1363,8 @@ function ConfirmationStep({ d, done }) {
 
 /* the flow container: owns the draft so every step shares it */
 function BookPage() {
+  const toast = useToast()
+  const [askSubmit, setAskSubmit] = useState(false)
   const [params] = useSearchParams()
   const [f, setF] = useState({ building: 'All Buildings', date: todayISO(), start: '09:00', end: '11:00', headcount: 50, types: [], amenities: [] })
   const [rooms, setRooms] = useState(USE_MOCK ? MOCK_ROOMS : [])
@@ -1400,6 +1405,7 @@ function BookPage() {
         setRooms(r.data.rooms.map((x) => ({
           id: x.id, name: x.name, building: x.building, floor: x.floor || '', capacity: x.capacity,
           types: x.layout ? [x.layout] : [], amenities: x.amenities ?? [], status: apiStatus(x.status),
+          image: x.image_url ?? x.photo_url ?? null, photos: x.photos ?? [],
         })))
         setError('')
       }).catch(() => setError('Could not load rooms. Please try again.')).finally(() => setLoading(false))
@@ -1449,8 +1455,11 @@ function BookPage() {
       }
       setDone({ ref, qr: qrPayload, total: cost })
       setStep(5)
+      toast('Booking request sent. Waiting for approval.')
     } catch (e) {
-      setSubmitError((isAxiosError(e) && e.response?.data?.error) || 'Could not send your request. Please try again.')
+      const msg = (isAxiosError(e) && e.response?.data?.error) || 'Could not send your request. Please try again.'
+      setSubmitError(msg)
+      toast(msg, 'error')
     } finally {
       setSubmitting(false)
     }
@@ -1468,7 +1477,16 @@ function BookPage() {
 
   if (step === 2 && d) return <DetailsStep d={d} set={setDraft} go={() => setStep(3)} back={() => setStep(1)} />
   if (step === 3 && d) return <ReservationStep d={d} set={setDraft} go={() => setStep(4)} back={() => setStep(2)} addons={addons} cost={cost} />
-  if (step === 4 && d) return <PaymentStep d={d} set={setDraft} back={() => setStep(3)} cost={cost} addons={addons} submitting={submitting} submitError={submitError} onPay={submit} />
+  if (step === 4 && d) return (
+    <>
+      <PaymentStep d={d} set={setDraft} back={() => setStep(3)} cost={cost} addons={addons} submitting={submitting} submitError={submitError} onPay={() => setAskSubmit(true)} />
+      {askSubmit && (
+        <ConfirmModal icon={CalendarCheck} tone="green" title="Send this booking request?" confirmLabel="Yes" cancelLabel="No" busy={submitting}
+          message={`${d.room.name} on ${fmtDay(d.date)}, ${slotLabel(d.start, d.end)}.`}
+          onCancel={() => setAskSubmit(false)} onConfirm={() => { setAskSubmit(false); submit() }} />
+      )}
+    </>
+  )
   if (step === 5 && d && done) return <ConfirmationStep d={d} done={done} />
 
   return (
@@ -1588,9 +1606,11 @@ function MyBookingsPage() {
 /* ───────────── 10. routes ───────────── */
 export default function BookerApp() {
   return (
+    <ToastProvider>
     <Routes>
       <Route index element={<LandingPage />} />
       <Route path="login" element={<LoginPage />} />
+      <Route path="register" element={<RegisterPage />} />
       <Route path="auth/callback" element={<GoogleAuthCallback />} />
       <Route element={<PortalShell />}>
         <Route path="dashboard" element={<DashboardPage />} />
@@ -1599,5 +1619,6 @@ export default function BookerApp() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ToastProvider>
   )
 }
