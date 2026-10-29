@@ -757,7 +757,7 @@ function LoginPage() {
             <label className="flex items-center gap-2 text-slate-600">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-3.5 accent-gc-700" /> Remember me
             </label>
-            <Link to="/admin/forgot-password" className="font-semibold text-gc-700 hover:underline">Forgot password?</Link>
+            <Link to="/admin/forgot-password" state={{ email }} className="font-semibold text-gc-700 hover:underline">Forgot password?</Link>
           </div>
 
           {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600">{error}</p>}

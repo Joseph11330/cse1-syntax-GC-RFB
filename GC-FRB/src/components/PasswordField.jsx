@@ -6,11 +6,15 @@ import { Req } from './Req'
 // Password input with an eye icon to preview the text.
 // showRules  -> live checklist (8+ chars, 1 capital, 1 number, 1 symbol)
 // error      -> message under the field
+const LEVEL = ['', 'Weak', 'Fair', 'Good', 'Strong']
+const LEVEL_BAR = ['', 'bg-rose-400', 'bg-amber-400', 'bg-lime-500', 'bg-gc-600']
+
 export default function PasswordField({
   label = 'Password', value, onChange, placeholder = 'Your password', autoComplete = 'new-password',
   required = true, showRules = false, error, inputClass, labelClass, name,
 }) {
   const [show, setShow] = useState(false)
+  const score = PASSWORD_RULES.filter((r) => r.test(value)).length
   return (
     <div>
       <label className={labelClass}>{label}{required && <Req />}
@@ -24,6 +28,14 @@ export default function PasswordField({
           </button>
         </span>
       </label>
+      {showRules && value && (
+        <div className="mt-3 flex items-center gap-3" aria-label={`Password strength: ${LEVEL[score] || 'too short'}`}>
+          <div className="flex flex-1 gap-1.5">
+            {[1, 2, 3, 4].map((i) => <span key={i} className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${i <= score ? LEVEL_BAR[score] : 'bg-slate-200'}`} />)}
+          </div>
+          <span className="w-12 text-right text-[11px] font-semibold text-slate-600">{LEVEL[score]}</span>
+        </div>
+      )}
       {showRules && (
         <ul className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Password requirements">
           {PASSWORD_RULES.map((r) => {

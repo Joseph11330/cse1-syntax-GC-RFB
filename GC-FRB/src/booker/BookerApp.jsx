@@ -15,6 +15,7 @@ import { ToastProvider } from '../components/Toast'
 import { useToast } from '../components/toastContext'
 import { displayName, firstNameOf } from '../lib/name'
 import RegisterPage from './RegisterPage'
+import { ForgotPasswordPage, ResetPasswordPage } from './ForgotPassword'
 import { GHOST, INPUT, LABEL, PRIMARY } from './ui'
 import logoSidebar from '../assets/logo-sidebar.png'
 import './booker.css'
@@ -591,7 +592,7 @@ function LoginPage() {
               <label className="flex items-center gap-2 font-medium text-slate-700">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-4 accent-gc-700" /> Remember me
               </label>
-              <button type="button" onClick={() => setError('Password reset is not available yet. Please contact the facilities office.')} className="font-semibold text-gc-800 hover:underline">Forget Password?</button>
+              <Link to="/forgot-password" state={{ email }} className="font-semibold text-gc-800 hover:underline">Forgot password?</Link>
             </div>
             {error && <p role="alert" className="rounded-xl bg-red-50 px-3.5 py-2.5 text-xs text-red-600">{error}</p>}
             <button disabled={loading} className={`${PRIMARY} w-full !rounded-full !py-3.5 text-sm`}>{loading ? 'Signing in…' : 'Login'}</button>
@@ -1558,6 +1559,8 @@ export default function BookerApp() {
       <Route index element={<LandingPage />} />
       <Route path="login" element={<LoginPage />} />
       <Route path="register" element={<RegisterPage />} />
+      <Route path="forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="reset-password" element={<ResetPasswordPage />} />
       <Route path="auth/callback" element={<GoogleAuthCallback />} />
       <Route element={<PortalShell />}>
         <Route path="dashboard" element={<DashboardPage />} />

@@ -53,8 +53,14 @@ body { @apply bg-white font-sans text-slate-800 antialiased; margin: 0; }
 .anim-grow-y { animation: grow-y .7s cubic-bezier(.2,.8,.2,1) both }
 .anim-grow-x { animation: grow-x .8s cubic-bezier(.2,.8,.2,1) both }
 
+/* Password reset: success moment */
+@keyframes ring-out { from { transform: scale(1); opacity: .6 } to { transform: scale(1.9); opacity: 0 } }
+@keyframes success-pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.08); opacity: 1 } 100% { transform: scale(1) } }
+.anim-ring { animation: ring-out 1.8s cubic-bezier(.2,.8,.2,1) 2 both }
+.anim-success { animation: success-pop .55s cubic-bezier(.2,.9,.3,1.2) both }
+
 @media (prefers-reduced-motion: reduce) {
-  .anim-fade-up, .anim-pop, .anim-toast, .anim-grow-y, .anim-grow-x, .modal-backdrop, .modal-pop { animation: none !important }
+  .anim-fade-up, .anim-pop, .anim-toast, .anim-grow-y, .anim-grow-x, .modal-backdrop, .modal-pop, .anim-ring, .anim-success { animation: none !important }
 }
 
 /* Slim scrollbars for the admin panel */
